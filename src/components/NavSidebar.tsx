@@ -1,0 +1,58 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { FileText, LayoutDashboard, Settings, Layers, BarChart2, Users } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+const navItems = [
+  { href: '/dashboard/assets', label: 'Asset Library', icon: FileText },
+  { href: '/dashboard/tracks', label: 'Tracks', icon: LayoutDashboard },
+  { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart2 },
+  { href: '/dashboard/leads', label: 'Leads', icon: Users },
+  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+]
+
+export function NavSidebar() {
+  const pathname = usePathname()
+
+  return (
+    <aside className="fixed inset-y-0 left-0 z-10 hidden w-60 flex-col border-r bg-background sm:flex">
+      <div className="flex h-14 items-center border-b px-5 lg:h-[60px]">
+        <Link href="/dashboard" className="flex items-center gap-2.5 font-semibold">
+          <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
+            <Layers className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <span className="tracking-tight">PathFactory</span>
+        </Link>
+      </div>
+      <div className="flex-1 overflow-auto py-4">
+        <nav className="grid gap-0.5 px-3">
+          {navItems.map(({ href, label, icon: Icon }) => {
+            const active = pathname === href || pathname.startsWith(href + '/')
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  active
+                    ? 'bg-accent text-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {label}
+              </Link>
+            )
+          })}
+        </nav>
+      </div>
+      <div className="border-t px-3 py-3">
+        <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          PathFactory Clone v1.0
+        </div>
+      </div>
+    </aside>
+  )
+}
