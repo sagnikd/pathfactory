@@ -5,7 +5,7 @@ import { trackEvent } from '@/lib/tracking'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-import { ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
@@ -34,20 +34,6 @@ function formatTime(secs: number): string {
   const s = Math.floor(secs % 60)
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
-}
-
-// Loads the YouTube IFrame API script once and resolves when ready
-let ytApiPromise: Promise<void> | null = null
-function loadYouTubeApi(): Promise<void> {
-  if (ytApiPromise) return ytApiPromise
-  ytApiPromise = new Promise((resolve) => {
-    if ((window as any).YT?.Player) { resolve(); return }
-    ;(window as any).onYouTubeIframeAPIReady = resolve
-    const s = document.createElement('script')
-    s.src = 'https://www.youtube.com/iframe_api'
-    document.head.appendChild(s)
-  })
-  return ytApiPromise
 }
 
 // ─── Root viewer ─────────────────────────────────────────────────────────────
@@ -153,78 +139,94 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
   )
 }
 
-// ─── YouTube IFrame API player with saved position ───────────────────────────
+// ─── YouTube viewer — plain iframe + postMessage protocol (no YT.Player API) ──
+// YT.Player replaces the iframe it targets, stripping our CSS classes → black box.
+// Instead we use YouTube's underlying postMessage protocol directly.
 
 function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
-  const playerRef = useRef<any>(null)
-  const pollRef   = useRef<ReturnType<typeof setInterval> | null>(null)
-  const [resumed, setResumed]   = useState(false)
-  const [resumeAt, setResumeAt] = useState(0)
+  const iframeRef  = useRef<HTMLIFrameElement>(null)
+  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
+  const playRef    = useRef<{ startWall: number; startPos: number } | null>(null)
   const storageKey = `yt-time-${asset.id}`
-  const playerId   = `yt-${asset.id}`
 
   const videoId  = getYouTubeVideoId(url)
   const savedTime = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
+  const [resumed, setResumed] = useState(false)
 
-  // Build iframe src — ?start= seeks without the API so video is visible immediately
   const src = videoId
-    ? `https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1${savedTime > 5 ? `&start=${savedTime}` : ''}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`
+    ? `https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1${savedTime > 5 ? `&start=${savedTime}` : ''}`
     : null
 
+  // Show "resuming" toast once on mount if there's a saved position
   useEffect(() => {
-    if (!videoId) return
-    let destroyed = false
-
-    // Wrap the already-visible iframe with YT.Player for event callbacks
-    loadYouTubeApi().then(() => {
-      if (destroyed) return
-      const YT = (window as any).YT
-
-      // YT.Player wraps an existing <iframe> when given its id
-      playerRef.current = new YT.Player(playerId, {
-        events: {
-          onReady() {
-            if (savedTime > 5) {
-              setResumeAt(savedTime)
-              setResumed(true)
-              setTimeout(() => setResumed(false), 3000)
-            }
-          },
-          onStateChange(e: any) {
-            const S = YT.PlayerState
-            if (e.data === S.PLAYING) {
-              trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
-              pollRef.current = setInterval(() => {
-                const t = playerRef.current?.getCurrentTime?.()
-                if (t != null) localStorage.setItem(storageKey, String(t))
-              }, 3000)
-            }
-            if (e.data === S.PAUSED) {
-              clearInterval(pollRef.current!)
-              const t = playerRef.current?.getCurrentTime?.()
-              if (t != null) localStorage.setItem(storageKey, String(t))
-              trackEvent({ sessionId, assetId: asset.id, eventType: 'video_pause' })
-            }
-            if (e.data === S.ENDED) {
-              clearInterval(pollRef.current!)
-              localStorage.removeItem(storageKey)
-              trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
-              onComplete?.()
-            }
-          },
-        },
-      })
-    })
-
-    return () => {
-      destroyed = true
-      clearInterval(pollRef.current!)
-      const t = playerRef.current?.getCurrentTime?.()
-      if (t != null && t > 5) localStorage.setItem(storageKey, String(t))
-      playerRef.current?.destroy?.()
-      playerRef.current = null
+    if (savedTime > 5) {
+      setResumed(true)
+      const t = setTimeout(() => setResumed(false), 3000)
+      return () => clearTimeout(t)
     }
-  }, [videoId])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // postMessage event listener for YouTube state changes
+  useEffect(() => {
+    const savePos = () => {
+      if (playRef.current) {
+        const pos = playRef.current.startPos + (Date.now() - playRef.current.startWall) / 1000
+        localStorage.setItem(storageKey, String(pos))
+      }
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== 'https://www.youtube.com') return
+      let data: any
+      try { data = JSON.parse(event.data) } catch { return }
+
+      if (data.event === 'onReady') {
+        // Subscribe to state change events
+        iframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onStateChange'] }),
+          'https://www.youtube.com'
+        )
+      }
+
+      if (data.event === 'onStateChange') {
+        const state = data.info
+        // 1 = playing, 2 = paused, 0 = ended
+        if (state === 1) {
+          trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
+          const currentPos = parseFloat(localStorage.getItem(storageKey) ?? '0') || savedTime
+          playRef.current = { startWall: Date.now(), startPos: currentPos }
+          timerRef.current = setInterval(savePos, 3000)
+        }
+        if (state === 2) {
+          clearInterval(timerRef.current!)
+          savePos()
+          playRef.current = null
+          trackEvent({ sessionId, assetId: asset.id, eventType: 'video_pause' })
+        }
+        if (state === 0) {
+          clearInterval(timerRef.current!)
+          localStorage.removeItem(storageKey)
+          trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
+          onComplete?.()
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      clearInterval(timerRef.current!)
+      savePos()
+    }
+  }, [asset.id, sessionId, storageKey, savedTime, onComplete])
+
+  // Tell the iframe we're listening once it finishes loading
+  const handleLoad = useCallback(() => {
+    iframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'listening', id: 1 }),
+      'https://www.youtube.com'
+    )
+  }, [])
 
   if (!src) return <div className="w-full h-full bg-black" />
 
@@ -232,19 +234,16 @@ function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
     <div className="w-full h-full bg-black relative flex flex-col">
       {resumed && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-foreground/90 text-background text-xs px-3 py-1.5 rounded-full shadow-lg pointer-events-none">
-          Resuming from {formatTime(resumeAt)}
+          Resuming from {formatTime(savedTime)}
         </div>
       )}
-      {/*
-        Render the iframe directly — video is visible immediately with no black flash.
-        YT.Player wraps this existing iframe (by id) asynchronously for event handling.
-      */}
       <iframe
-        id={playerId}
+        ref={iframeRef}
         src={src}
         className="flex-1 w-full border-0"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen
+        onLoad={handleLoad}
       />
     </div>
   )
