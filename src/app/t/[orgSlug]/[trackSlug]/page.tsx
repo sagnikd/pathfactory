@@ -4,6 +4,36 @@ import { organizations, tracks, trackAssets, assets, sessions, visitors, leads }
 import { eq, and, asc, desc } from 'drizzle-orm'
 import { cookies } from 'next/headers'
 import TrackViewer from './TrackViewer'
+import type { Metadata } from 'next'
+
+type TrackTheme = {
+  seoTitle?: string | null
+  faviconUrl?: string | null
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ orgSlug: string, trackSlug: string }>
+}): Promise<Metadata> {
+  const { orgSlug, trackSlug } = await params
+
+  const [org] = await db.select().from(organizations).where(eq(organizations.slug, orgSlug))
+  if (!org) return { title: 'Content Track' }
+
+  const [track] = await db.select().from(tracks)
+    .where(and(eq(tracks.organizationId, org.id), eq(tracks.slug, trackSlug)))
+  if (!track) return { title: 'Content Track' }
+
+  const theme = (track.themeJson as TrackTheme | null) ?? null
+  const pageTitle = theme?.seoTitle?.trim() || `${track.title} | ${org.name}`
+  const favicon = theme?.faviconUrl?.trim() || undefined
+
+  return {
+    title: pageTitle,
+    icons: favicon ? { icon: favicon, shortcut: favicon, apple: favicon } : undefined,
+  }
+}
 
 export default async function PublicTrackPage({
   params

@@ -37,6 +37,19 @@ function isCloudinaryPlayerUrl(url: string): boolean {
   }
 }
 
+function withCloudinaryStartOffset(url: string, seconds: number): string {
+  try {
+    const u = new URL(url)
+    if (!(u.hostname === 'player.cloudinary.com' && u.pathname.startsWith('/embed'))) return url
+    const start = Math.max(0, Math.floor(seconds))
+    if (start <= 0) return url
+    u.searchParams.set('source[transformation][start_offset]', String(start))
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
 function formatTime(secs: number): string {
   const h = Math.floor(secs / 3600)
   const m = Math.floor((secs % 3600) / 60)
@@ -143,6 +156,10 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
   const isVimeo   = raw.includes('vimeo.com')
   const isCloudinary = isCloudinaryPlayerUrl(raw)
 
+  if (isCloudinary) {
+    return <CloudinaryViewer url={raw} asset={asset} sessionId={sessionId} onComplete={onComplete} />
+  }
+
   if (isYouTube) {
     return <YouTubeViewer url={raw} asset={asset} sessionId={sessionId} onComplete={onComplete} />
   }
@@ -184,6 +201,70 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
         onPause={() => trackEvent({ sessionId, assetId: asset.id, eventType: 'video_pause' })}
         onEnded={() => { trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' }); onComplete?.() }}
       />
+    </div>
+  )
+}
+
+function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
+  const storageKey = `cloudinary-time-${asset.id}`
+  const savedTime = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
+  const src = withCloudinaryStartOffset(url, savedTime)
+  const loadedAtRef = useRef(0)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const handleLoad = useCallback(() => {
+    loadedAtRef.current = Date.now()
+    if (timerRef.current) clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => {
+      const pos = savedTime + (Date.now() - loadedAtRef.current) / 1000
+      localStorage.setItem(storageKey, String(pos))
+    }, 5000)
+    trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
+  }, [savedTime, storageKey, sessionId, asset.id])
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+      if (loadedAtRef.current > 0) {
+        const pos = savedTime + (Date.now() - loadedAtRef.current) / 1000
+        if (pos > savedTime + 3) localStorage.setItem(storageKey, String(pos))
+      }
+    }
+  }, [savedTime, storageKey])
+
+  const handleContinue = () => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    localStorage.removeItem(storageKey)
+    trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
+    onComplete?.()
+  }
+
+  return (
+    <div className="w-full h-full flex flex-col bg-black">
+      {savedTime > 5 && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-foreground/90 text-background text-xs px-3 py-1.5 rounded-full shadow-lg pointer-events-none">
+          Resuming from {formatTime(savedTime)}
+        </div>
+      )}
+      <div className="flex-1 relative">
+        <iframe
+          src={src}
+          className="absolute inset-0 w-full h-full border-0"
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowFullScreen
+          onLoad={handleLoad}
+        />
+      </div>
+      {onComplete && (
+        <div className="shrink-0 h-14 bg-background border-t flex items-center justify-end px-4">
+          <button
+            onClick={handleContinue}
+            className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+          >
+            Mark complete &amp; continue
+          </button>
+        </div>
+      )}
     </div>
   )
 }

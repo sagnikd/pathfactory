@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { db } from '@/db'
 import { tracks, trackAssets, assets } from '@/db/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import * as cheerio from 'cheerio'
 
 function extractYouTubeId(url: string): string | null {
@@ -45,6 +45,10 @@ function cleanTitle(raw: string, fallbackUrl: string): string {
   return cleaned.substring(0, 120) || titleFromUrl(fallbackUrl)
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error'
+}
+
 function slugify(text: string) {
   return text
     .toLowerCase()
@@ -57,7 +61,8 @@ export async function createTrack(
   orgId: string,
   data: { title: string; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
   assetIds: string[],
-  gateConfigJson?: object | null
+  gateConfigJson?: object | null,
+  themeJson?: object | null
 ) {
   const slug = slugify(data.title) + '-' + Math.random().toString(36).substring(2, 6)
 
@@ -68,6 +73,7 @@ export async function createTrack(
     layout: data.layout,
     status: data.status,
     gateConfigJson: gateConfigJson ?? null,
+    themeJson: themeJson ?? null,
   }).returning()
 
   if (assetIds.length > 0) {
@@ -84,10 +90,18 @@ export async function updateTrack(
   trackId: string,
   data: { title: string; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
   assetIds: string[],
-  gateConfigJson?: object | null
+  gateConfigJson?: object | null,
+  themeJson?: object | null
 ) {
   await db.update(tracks)
-    .set({ title: data.title, layout: data.layout, status: data.status, gateConfigJson: gateConfigJson ?? null, updatedAt: new Date() })
+    .set({
+      title: data.title,
+      layout: data.layout,
+      status: data.status,
+      gateConfigJson: gateConfigJson ?? null,
+      themeJson: themeJson ?? null,
+      updatedAt: new Date(),
+    })
     .where(eq(tracks.id, trackId))
 
   await db.delete(trackAssets).where(eq(trackAssets.trackId, trackId))
@@ -170,8 +184,8 @@ export async function bulkImportUrls(orgId: string, rawUrls: string) {
       }).returning()
 
       results.push({ url, assetId: asset.id, title: asset.title })
-    } catch (err: any) {
-      errors.push({ url, error: err.message })
+    } catch (err: unknown) {
+      errors.push({ url, error: getErrorMessage(err) })
     }
   }
 

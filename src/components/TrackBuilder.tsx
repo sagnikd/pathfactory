@@ -35,6 +35,10 @@ type TrackData = {
   status: 'draft' | 'published'
   assetIds: string[]
   gateConfigJson?: GateConfig | null
+  themeJson?: {
+    seoTitle?: string
+    faviconUrl?: string
+  } | null
 }
 
 const DEFAULT_LEAD_FIELDS: LeadField[] = [
@@ -72,6 +76,8 @@ export function TrackBuilder({
   const [status, setStatus] = useState<TrackData['status']>(initialTrack?.status ?? 'draft')
   const [selectedIds, setSelectedIds] = useState<string[]>(initialTrack?.assetIds ?? [])
   const [importedAssets, setImportedAssets] = useState<Asset[]>([])
+  const [seoTitle, setSeoTitle] = useState(initialTrack?.themeJson?.seoTitle ?? '')
+  const [faviconUrl, setFaviconUrl] = useState(initialTrack?.themeJson?.faviconUrl ?? '')
   const [isPending, startTransition] = useTransition()
 
   // ── Lead capture config ──────────────────────────────────────────────────
@@ -166,11 +172,15 @@ export function TrackBuilder({
       description: lcDescription,
       fields: lcFields,
     }
+    const themeJson = {
+      seoTitle: seoTitle.trim() || null,
+      faviconUrl: faviconUrl.trim() || null,
+    }
     startTransition(async () => {
       if (initialTrack?.id) {
-        await updateTrack(initialTrack.id, { title, layout, status }, selectedIds, gateConfigJson)
+        await updateTrack(initialTrack.id, { title, layout, status }, selectedIds, gateConfigJson, themeJson)
       } else {
-        await createTrack(orgId, { title, layout, status }, selectedIds, gateConfigJson)
+        await createTrack(orgId, { title, layout, status }, selectedIds, gateConfigJson, themeJson)
       }
     })
   }
@@ -219,6 +229,35 @@ export function TrackBuilder({
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {initialTrack?.id ? 'Save changes' : 'Create track'}
           </Button>
+        </div>
+      </div>
+
+      {/* SEO + favicon */}
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <div>
+          <h2 className="font-semibold text-sm">SEO & Tab Branding</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Customize browser tab title and favicon for this public track</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="seo-title">SEO / Browser title</Label>
+            <Input
+              id="seo-title"
+              placeholder="Content Engagement Platform | Product Tour"
+              value={seoTitle}
+              onChange={(e) => setSeoTitle(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="favicon-url">Favicon URL</Label>
+            <Input
+              id="favicon-url"
+              type="url"
+              placeholder="https://example.com/favicon.png"
+              value={faviconUrl}
+              onChange={(e) => setFaviconUrl(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
