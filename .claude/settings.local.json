@@ -3,7 +3,11 @@
     "allow": [
       "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
       "Bash(npx tsc *)",
-      "Bash(node -e \"const p = require\\('/Users/sagnikdatta/Library/CloudStorage/OneDrive-iiitb.net/25q3 datascience/pathfactory/node_modules/pdfjs-dist/package.json'\\); console.log\\(p.version\\)\")"
+      "Bash(node -e \"const p = require\\('/Users/sagnikdatta/Library/CloudStorage/OneDrive-iiitb.net/25q3 datascience/pathfactory/node_modules/pdfjs-dist/package.json'\\); console.log\\(p.version\\)\")",
+      "Bash(npx drizzle-kit *)",
+      "mcp__plugin_context-mode_context-mode__ctx_search",
+      "mcp__plugin_context-mode_context-mode__ctx_execute_file",
+      "mcp__plugin_context-mode_context-mode__ctx_execute"
     ]
   }
 }

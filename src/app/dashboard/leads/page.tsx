@@ -4,6 +4,7 @@ import { eq, inArray, desc } from 'drizzle-orm'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import LeadClientList from './LeadClientList'
+import { computeLeadScores } from '@/lib/leadScore'
 
 export default async function LeadsPage() {
   const supabase = await createClient()
@@ -38,6 +39,9 @@ export default async function LeadsPage() {
     .where(inArray(leads.visitorId, validVisitorIds))
     .orderBy(desc(leads.score))
 
+  // Compute live engagement-based scores for every visitor
+  const liveScores = await computeLeadScores(validVisitorIds)
+
   // Fetch timeline data for these valid leads
   const timelineData = await db.select({
     visitorId: visitors.id,
@@ -70,7 +74,7 @@ export default async function LeadsPage() {
           <p className="text-muted-foreground mt-2">View captured leads and their complete journey through your content tracks.</p>
         </div>
       </div>
-      <LeadClientList leads={validLeads} timelines={timelinesByVisitor} />
+      <LeadClientList leads={validLeads} timelines={timelinesByVisitor} liveScores={liveScores} />
     </div>
   )
 }

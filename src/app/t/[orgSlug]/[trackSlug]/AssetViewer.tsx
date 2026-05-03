@@ -36,6 +36,7 @@ function formatTime(secs: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+
 // ─── Root viewer ─────────────────────────────────────────────────────────────
 
 export function AssetViewer({ asset, sessionId, onComplete }: any) {
@@ -45,6 +46,41 @@ export function AssetViewer({ asset, sessionId, onComplete }: any) {
   const handleAssetComplete = () => {
     if (onComplete) { setShowCountdown(true); setCountdown(3) }
   }
+
+  // ── Dwell-time tracking ──────────────────────────────────────────────────
+  // Fire a `view` event immediately when this asset is displayed, then emit
+  // a `dwell_tick` every 10 seconds the tab is visible.  When the user switches
+  // tabs the ticker pauses; when they return it resumes.  Cleanup on unmount.
+  useEffect(() => {
+    trackEvent({ sessionId, assetId: asset.id, eventType: 'view' })
+
+    let tickInterval: ReturnType<typeof setInterval> | null = null
+
+    const startTicking = () => {
+      if (tickInterval) return
+      tickInterval = setInterval(() => {
+        trackEvent({ sessionId, assetId: asset.id, eventType: 'dwell_tick' })
+      }, 10_000)
+    }
+
+    const stopTicking = () => {
+      if (tickInterval) { clearInterval(tickInterval); tickInterval = null }
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') stopTicking()
+      else startTicking()
+    }
+
+    if (document.visibilityState === 'visible') startTicking()
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      stopTicking()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [asset.id, sessionId]) // re-runs when user navigates to a different asset
+  // ────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!showCountdown) return
@@ -139,112 +175,74 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
   )
 }
 
-// ─── YouTube viewer — plain iframe + postMessage protocol (no YT.Player API) ──
-// YT.Player replaces the iframe it targets, stripping our CSS classes → black box.
-// Instead we use YouTube's underlying postMessage protocol directly.
+// ─── YouTube viewer — plain iframe only ──────────────────────────────────────
+// YT.Player directly mutates React-owned DOM nodes (replaces them) which causes
+// React's "insertBefore" / "NotFoundError" crash on every re-render.
+// A plain <iframe> is owned by React — no external mutations, no crashes, no
+// black screen. Position is saved via wall-clock estimation (±5 s accuracy).
 
 function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
-  const iframeRef  = useRef<HTMLIFrameElement>(null)
-  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
-  const playRef    = useRef<{ startWall: number; startPos: number } | null>(null)
-  const storageKey = `yt-time-${asset.id}`
+  const storageKey  = `yt-time-${asset.id}`
+  const savedTime   = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
+  const loadedAtRef = useRef(0)
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
+  const videoId     = getYouTubeVideoId(url)
 
-  const videoId  = getYouTubeVideoId(url)
-  const savedTime = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
-  const [resumed, setResumed] = useState(false)
+  const handleLoad = useCallback(() => {
+    loadedAtRef.current = Date.now()
+    clearInterval(timerRef.current!)
+    timerRef.current = setInterval(() => {
+      const pos = savedTime + (Date.now() - loadedAtRef.current) / 1000
+      localStorage.setItem(storageKey, String(pos))
+    }, 5000)
+    trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
+  }, [savedTime, storageKey, sessionId, asset.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    return () => {
+      clearInterval(timerRef.current!)
+      if (loadedAtRef.current > 0) {
+        const pos = savedTime + (Date.now() - loadedAtRef.current) / 1000
+        if (pos > savedTime + 3) localStorage.setItem(storageKey, String(pos))
+      }
+    }
+  }, [storageKey, savedTime]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const src = videoId
-    ? `https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1${savedTime > 5 ? `&start=${savedTime}` : ''}`
+    ? `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1${savedTime > 5 ? `&start=${savedTime}` : ''}`
     : null
 
-  // Show "resuming" toast once on mount if there's a saved position
-  useEffect(() => {
-    if (savedTime > 5) {
-      setResumed(true)
-      const t = setTimeout(() => setResumed(false), 3000)
-      return () => clearTimeout(t)
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // postMessage event listener for YouTube state changes
-  useEffect(() => {
-    const savePos = () => {
-      if (playRef.current) {
-        const pos = playRef.current.startPos + (Date.now() - playRef.current.startWall) / 1000
-        localStorage.setItem(storageKey, String(pos))
-      }
-    }
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== 'https://www.youtube.com') return
-      let data: any
-      try { data = JSON.parse(event.data) } catch { return }
-
-      if (data.event === 'onReady') {
-        // Subscribe to state change events
-        iframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onStateChange'] }),
-          'https://www.youtube.com'
-        )
-      }
-
-      if (data.event === 'onStateChange') {
-        const state = data.info
-        // 1 = playing, 2 = paused, 0 = ended
-        if (state === 1) {
-          trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
-          const currentPos = parseFloat(localStorage.getItem(storageKey) ?? '0') || savedTime
-          playRef.current = { startWall: Date.now(), startPos: currentPos }
-          timerRef.current = setInterval(savePos, 3000)
-        }
-        if (state === 2) {
-          clearInterval(timerRef.current!)
-          savePos()
-          playRef.current = null
-          trackEvent({ sessionId, assetId: asset.id, eventType: 'video_pause' })
-        }
-        if (state === 0) {
-          clearInterval(timerRef.current!)
-          localStorage.removeItem(storageKey)
-          trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
-          onComplete?.()
-        }
-      }
-    }
-
-    window.addEventListener('message', handleMessage)
-    return () => {
-      window.removeEventListener('message', handleMessage)
-      clearInterval(timerRef.current!)
-      savePos()
-    }
-  }, [asset.id, sessionId, storageKey, savedTime, onComplete])
-
-  // Tell the iframe we're listening once it finishes loading
-  const handleLoad = useCallback(() => {
-    iframeRef.current?.contentWindow?.postMessage(
-      JSON.stringify({ event: 'listening', id: 1 }),
-      'https://www.youtube.com'
-    )
-  }, [])
-
-  if (!src) return <div className="w-full h-full bg-black" />
+  if (!src) return <div className="absolute inset-0 bg-black" />
 
   return (
-    <div className="w-full h-full bg-black relative flex flex-col">
-      {resumed && (
+    <div className="absolute inset-0 flex flex-col bg-black">
+      {savedTime > 5 && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-foreground/90 text-background text-xs px-3 py-1.5 rounded-full shadow-lg pointer-events-none">
           Resuming from {formatTime(savedTime)}
         </div>
       )}
       <iframe
-        ref={iframeRef}
         src={src}
         className="flex-1 w-full border-0"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen
         onLoad={handleLoad}
       />
+      {onComplete && (
+        <div className="shrink-0 h-14 bg-background border-t flex items-center justify-end px-4">
+          <button
+            onClick={() => {
+              clearInterval(timerRef.current!)
+              localStorage.removeItem(storageKey)
+              trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
+              onComplete()
+            }}
+            className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+          >
+            Mark complete &amp; continue
+          </button>
+        </div>
+      )}
     </div>
   )
 }

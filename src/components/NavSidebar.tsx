@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { FileText, LayoutDashboard, Settings, Layers, BarChart2, Users } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { FileText, LayoutDashboard, Settings, Layers, BarChart2, Users, ShieldCheck, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 
 const navItems = [
   { href: '/dashboard/assets', label: 'Asset Library', icon: FileText },
@@ -13,8 +14,15 @@ const navItems = [
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ]
 
-export function NavSidebar() {
+export function NavSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const pathname = usePathname()
+  const router = useRouter()
+
+  async function handleLogout() {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   return (
     <aside className="fixed inset-y-0 left-0 z-10 hidden w-60 flex-col border-r bg-background sm:flex">
@@ -48,7 +56,30 @@ export function NavSidebar() {
           })}
         </nav>
       </div>
-      <div className="border-t px-3 py-3">
+      {isSuperAdmin && (
+        <div className="px-3 pb-2">
+          <Link
+            href="/dashboard/admin"
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+              pathname.startsWith('/dashboard/admin')
+                ? 'bg-accent text-primary'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            )}
+          >
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            Admin
+          </Link>
+        </div>
+      )}
+      <div className="border-t px-3 py-3 space-y-1">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          Log out
+        </button>
         <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           PathFactory Clone v1.0
         </div>

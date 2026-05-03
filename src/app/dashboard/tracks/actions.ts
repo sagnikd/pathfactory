@@ -47,7 +47,8 @@ function slugify(text: string) {
 export async function createTrack(
   orgId: string,
   data: { title: string; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
-  assetIds: string[]
+  assetIds: string[],
+  gateConfigJson?: object | null
 ) {
   const slug = slugify(data.title) + '-' + Math.random().toString(36).substring(2, 6)
 
@@ -57,6 +58,7 @@ export async function createTrack(
     slug,
     layout: data.layout,
     status: data.status,
+    gateConfigJson: gateConfigJson ?? null,
   }).returning()
 
   if (assetIds.length > 0) {
@@ -72,10 +74,11 @@ export async function createTrack(
 export async function updateTrack(
   trackId: string,
   data: { title: string; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
-  assetIds: string[]
+  assetIds: string[],
+  gateConfigJson?: object | null
 ) {
   await db.update(tracks)
-    .set({ title: data.title, layout: data.layout, status: data.status, updatedAt: new Date() })
+    .set({ title: data.title, layout: data.layout, status: data.status, gateConfigJson: gateConfigJson ?? null, updatedAt: new Date() })
     .where(eq(tracks.id, trackId))
 
   await db.delete(trackAssets).where(eq(trackAssets.trackId, trackId))

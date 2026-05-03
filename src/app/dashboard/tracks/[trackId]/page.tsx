@@ -77,6 +77,7 @@ export default async function EditTrackPage({
           layout: track.layout,
           status: track.status,
           assetIds,
+          gateConfigJson: track.gateConfigJson as any,
         }}
       />
     </div>

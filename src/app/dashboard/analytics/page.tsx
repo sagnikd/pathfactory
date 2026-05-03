@@ -6,6 +6,13 @@ import AnalyticsCharts from './AnalyticsCharts'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
+function fmtDwell(secs: number): string {
+  if (secs < 60) return `${secs}s`
+  const m = Math.floor(secs / 60)
+  const s = Math.round(secs % 60)
+  return s > 0 ? `${m}m ${s}s` : `${m}m`
+}
+
 export default async function AnalyticsDashboard() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -49,7 +56,15 @@ export default async function AnalyticsDashboard() {
     assetId: assets.id,
     title: assets.title,
     views: sql<number>`count(CASE WHEN ${engagements.eventType} = 'view' THEN 1 END)`.mapWith(Number),
-    avgDwellTime: sql<number>`count(CASE WHEN ${engagements.eventType} = 'dwell_tick' THEN 1 END) * 5 / GREATEST(count(DISTINCT ${engagements.sessionId}), 1)`.mapWith(Number)
+    // dwell_tick fires every 10 s while the tab is visible.
+    // Divide by sessions that actually emitted a dwell_tick (not all sessions)
+    // so a bounce (view but 0 ticks) doesn't drag the average down to near zero.
+    avgDwellTime: sql<number>`
+      count(CASE WHEN ${engagements.eventType} = 'dwell_tick' THEN 1 END) * 10.0
+      / GREATEST(
+          count(DISTINCT CASE WHEN ${engagements.eventType} = 'dwell_tick' THEN ${engagements.sessionId} END),
+          1
+        )`.mapWith(Number)
   })
   .from(assets)
   .leftJoin(engagements, eq(assets.id, engagements.assetId))
@@ -62,6 +77,13 @@ export default async function AnalyticsDashboard() {
     name: a.title.substring(0, 15) + (a.title.length > 15 ? '...' : ''),
     views: a.views
   }))
+
+  // Overall avg dwell = total dwell seconds across all org assets
+  //                     / number of distinct (asset, session) pairs that had at least one tick
+  const engagedAssets = topAssets.filter(a => a.avgDwellTime > 0)
+  const overallAvgDwell = engagedAssets.length > 0
+    ? Math.round(engagedAssets.reduce((sum, a) => sum + a.avgDwellTime, 0) / engagedAssets.length)
+    : 0
 
   return (
     <div className="p-8">
@@ -89,10 +111,10 @@ export default async function AnalyticsDashboard() {
             <CardTitle className="text-sm font-medium">Average Dwell / Asset</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {topAssets.length > 0 ? Math.round(topAssets[0].avgDwellTime) : 0}s
-            </div>
-            <p className="text-xs text-muted-foreground">Based on top asset</p>
+            <div className="text-2xl font-bold">{fmtDwell(overallAvgDwell)}</div>
+            <p className="text-xs text-muted-foreground">
+              Across {engagedAssets.length} asset{engagedAssets.length !== 1 ? 's' : ''} with engagement
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -118,7 +140,7 @@ export default async function AnalyticsDashboard() {
                   <div className="ml-4 space-y-1">
                     <p className="text-sm font-medium leading-none">{asset.title}</p>
                     <p className="text-sm text-muted-foreground">
-                      {asset.views} views • avg {Math.round(asset.avgDwellTime)}s dwell
+                      {asset.views} view{asset.views !== 1 ? 's' : ''} • avg {fmtDwell(Math.round(asset.avgDwellTime))} dwell
                     </p>
                   </div>
                   <div className="ml-auto font-medium">
