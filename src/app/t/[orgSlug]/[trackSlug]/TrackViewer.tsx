@@ -10,7 +10,14 @@ const AssetViewer = dynamic(() => import('./AssetViewer').then(m => m.AssetViewe
 
 type TrackViewerProps = {
   track: { id: string; title: string; layout?: 'binge' | 'hub' | 'single'; gateConfigJson?: unknown }
-  assets: Array<{ id: string; title: string }>
+  assets: Array<{
+    id: string
+    title: string
+    type?: 'pdf' | 'video' | 'article' | 'image'
+    thumbnailUrl?: string | null
+    sourceUrl?: string | null
+    fileUrl?: string | null
+  }>
   org: { name: string }
   sessionId: string | null
   visitorId: string | null
@@ -82,22 +89,46 @@ export default function TrackViewer({
       {/* Main content */}
       {layout === 'hub' ? (
         <main className="flex-1 overflow-hidden bg-muted/20 flex">
-          <aside className="w-72 border-r bg-background/90 overflow-y-auto p-3 space-y-2">
+          <aside className="w-80 border-r bg-background overflow-y-auto p-3 space-y-2">
             {assets.map((asset, index) => {
               const active = index === effectiveIndex
+              const tag = asset.type ? asset.type.toUpperCase() : 'ASSET'
+              const thumb = asset.thumbnailUrl || asset.fileUrl || asset.sourceUrl || null
               return (
                 <button
                   key={asset.id}
                   onClick={() => setCurrentAssetIndex(index)}
-                  className={`w-full text-left rounded-md border px-3 py-2 text-sm transition-colors ${
+                  className={`w-full text-left rounded-lg border p-2.5 transition-colors ${
                     active
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-background hover:bg-muted border-border'
+                      ? 'bg-primary/5 border-primary/40 shadow-sm'
+                      : 'bg-card hover:bg-muted/50 border-border'
                   }`}
                 >
-                  <div className="font-medium line-clamp-1">{asset.title}</div>
-                  <div className={`text-xs mt-1 ${active ? 'text-primary-foreground/90' : 'text-muted-foreground'}`}>
-                    Asset {index + 1}
+                  <div className="flex gap-3 items-start">
+                    <div className="w-16 h-12 rounded overflow-hidden bg-muted shrink-0 border">
+                      {thumb ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={thumb} alt={asset.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">No image</div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className={`font-medium text-sm line-clamp-2 ${active ? 'text-primary' : 'text-foreground'}`}>
+                        {asset.title}
+                      </div>
+                      <div className="mt-2">
+                        <span
+                          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide ${
+                            asset.type === 'pdf'
+                              ? 'border-red-300 text-red-700 bg-red-50'
+                              : 'border-primary/40 text-primary bg-primary/5'
+                          }`}
+                        >
+                          {tag}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </button>
               )
