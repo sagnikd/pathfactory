@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { addUrlAsset, addFileAsset } from '@/app/dashboard/assets/actions'
 import { createClient } from '@/lib/supabase/client'
 import { useDropzone } from 'react-dropzone'
@@ -75,23 +76,84 @@ async function processPdf(file: File): Promise<{ blob: Blob | null; title: strin
   }
 }
 
-export function AssetUploadDialog({ organizationId }: { organizationId: string }) {
+type AddedAsset = {
+  id: string
+  title: string
+  type: 'pdf' | 'video' | 'article' | 'image'
+  thumbnailUrl: string | null
+  sourceUrl: string | null
+}
+
+export function AssetUploadDialog({
+  organizationId,
+  onAssetsAdded,
+}: {
+  organizationId: string
+  onAssetsAdded?: (assets: AddedAsset[]) => void
+}) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [url, setUrl] = useState('')
+  const [bulkUrls, setBulkUrls] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
+  const [bulkResult, setBulkResult] = useState<{ count: number; errors: number } | null>(null)
 
   const handleUrlSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setBulkResult(null)
     const res = await addUrlAsset(organizationId, url)
-    if (res.success) {
+    if (res.success && res.asset) {
+      onAssetsAdded?.([res.asset])
       setOpen(false)
       setUrl('')
     } else {
       setError(res.error || 'Failed to add asset')
+    }
+    setLoading(false)
+  }
+
+  const handleBulkImport = async () => {
+    if (!bulkUrls.trim()) return
+    setLoading(true)
+    setError(null)
+    setBulkResult(null)
+
+    const urls = bulkUrls
+      .split(/[\n,]+/)
+      .map((u) => u.trim())
+      .filter((u) => u.startsWith('http'))
+
+    if (urls.length === 0) {
+      setLoading(false)
+      setError('Add at least one valid URL starting with http/https.')
+      return
+    }
+
+    const added: AddedAsset[] = []
+    let failures = 0
+
+    for (const u of urls) {
+      const res = await addUrlAsset(organizationId, u)
+      if (res.success && res.asset) {
+        added.push(res.asset)
+      } else {
+        failures += 1
+      }
+    }
+
+    if (added.length > 0) {
+      onAssetsAdded?.(added)
+    }
+
+    setBulkResult({ count: added.length, errors: failures })
+    if (added.length > 0) {
+      setBulkUrls('')
+      if (failures === 0) {
+        setOpen(false)
+      }
     }
     setLoading(false)
   }
@@ -138,13 +200,15 @@ export function AssetUploadDialog({ organizationId }: { organizationId: string }
 
       setProgress('Saving…')
       const res = await addFileAsset(organizationId, { fileUrl: fileData.publicUrl, title, type, thumbnailUrl })
-      if (res.success) {
+      if (res.success && res.asset) {
+        onAssetsAdded?.([res.asset])
         setOpen(false)
       } else {
         setError(res.error || 'Failed to save asset')
       }
-    } catch (err: any) {
-      setError(err.message || 'Upload failed. Check your Supabase "assets" bucket has public access.')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Upload failed. Check your Supabase "assets" bucket has public access.'
+      setError(message)
     } finally {
       setLoading(false)
       setProgress(null)
@@ -227,6 +291,35 @@ export function AssetUploadDialog({ organizationId }: { organizationId: string }
               Save Link
             </Button>
           </form>
+
+          <div className="space-y-3 rounded-lg border p-3">
+            <div>
+              <Label htmlFor="bulk-urls">Bulk import URLs</Label>
+              <p className="text-xs text-muted-foreground mt-1">Paste one URL per line (or comma-separated)</p>
+            </div>
+            <Textarea
+              id="bulk-urls"
+              rows={4}
+              value={bulkUrls}
+              onChange={(e) => setBulkUrls(e.target.value)}
+              placeholder={`https://blog.example.com/post-1\nhttps://youtube.com/watch?v=...`}
+              className="resize-none font-mono text-xs"
+              disabled={loading}
+            />
+            {bulkResult && (
+              <p className="text-xs">
+                <span className="text-primary font-medium">✓ {bulkResult.count} imported</span>
+                {bulkResult.errors > 0 && <span className="text-destructive ml-2">{bulkResult.errors} failed</span>}
+              </p>
+            )}
+            <Button type="button" onClick={handleBulkImport} disabled={loading || !bulkUrls.trim()} className="w-full">
+              {loading ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importing…</>
+              ) : (
+                <>Import URLs</>
+              )}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

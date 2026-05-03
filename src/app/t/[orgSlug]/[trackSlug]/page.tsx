@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { db } from '@/db'
-import { organizations, tracks, trackAssets, assets, sessions, visitors } from '@/db/schema'
-import { eq, and, asc } from 'drizzle-orm'
+import { organizations, tracks, trackAssets, assets, sessions, visitors, leads } from '@/db/schema'
+import { eq, and, asc, desc } from 'drizzle-orm'
 import { cookies } from 'next/headers'
 import TrackViewer from './TrackViewer'
 
@@ -41,11 +41,14 @@ export default async function PublicTrackPage({
   
   let sessionId = null;
   let visitorId = null;
+  let returningVisitorName: string | null = null;
+  let isKnownVisitor = false;
 
   if (visitorIdCookie) {
     // Check if visitor exists
-    let visitorResults = await db.select().from(visitors).where(eq(visitors.fingerprintId, visitorIdCookie))
+    const visitorResults = await db.select().from(visitors).where(eq(visitors.fingerprintId, visitorIdCookie))
     let visitor = visitorResults[0]
+    const isReturningVisitor = !!visitor
 
     if (!visitor) {
       // Create visitor
@@ -56,6 +59,33 @@ export default async function PublicTrackPage({
     }
     
     visitorId = visitor.id;
+
+    if (isReturningVisitor) {
+      const latestLead = await db.select({
+        email: leads.email,
+        formResponsesJson: leads.formResponsesJson,
+      })
+      .from(leads)
+      .where(eq(leads.visitorId, visitor.id))
+      .orderBy(desc(leads.createdAt))
+      .limit(1)
+
+      const lead = latestLead[0]
+      if (lead) {
+        isKnownVisitor = true
+        const fields = (lead.formResponsesJson as Record<string, unknown> | null) ?? null
+        const firstName =
+          typeof fields?.firstName === 'string' ? fields.firstName.trim() : ''
+        const fallbackName =
+          lead.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim() ?? ''
+
+        returningVisitorName = firstName || fallbackName || null
+      } else if (visitor.capturedEmail) {
+        isKnownVisitor = true
+        returningVisitorName =
+          visitor.capturedEmail.split('@')[0]?.replace(/[._-]+/g, ' ').trim() || null
+      }
+    }
 
     // Create session
     const [newSession] = await db.insert(sessions).values({
@@ -76,6 +106,8 @@ export default async function PublicTrackPage({
         org={org} 
         sessionId={sessionId} 
         visitorId={visitorId}
+        returningVisitorName={returningVisitorName}
+        isKnownVisitor={isKnownVisitor}
       />
     </div>
   )

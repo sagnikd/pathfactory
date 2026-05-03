@@ -135,10 +135,11 @@ type Props = {
   trackId: string
   visitorId: string | null
   gateConfig: GateConfig | null
+  bypassGate?: boolean
   children: React.ReactNode
 }
 
-export function GateOverlay({ trackId, visitorId, gateConfig, children }: Props) {
+export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false, children }: Props) {
   const enabled      = gateConfig?.enabled ?? false
   const delaySeconds = gateConfig?.delaySeconds ?? 0
   const isHardGate   = delaySeconds === 0
@@ -155,7 +156,7 @@ export function GateOverlay({ trackId, visitorId, gateConfig, children }: Props)
 
   // ── gate timer ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || bypassGate) return
     if (localStorage.getItem(`unlocked_${trackId}`) === 'true') {
       setSubmitted(true)
       return
@@ -166,7 +167,7 @@ export function GateOverlay({ trackId, visitorId, gateConfig, children }: Props)
       timerRef.current = setTimeout(() => setShowForm(true), delaySeconds * 1000)
     }
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [enabled, trackId, delaySeconds])
+  }, [enabled, bypassGate, trackId, delaySeconds])
 
   // ── IP reverse-lookup once the form becomes visible ─────────────────────
   useEffect(() => {
@@ -238,7 +239,7 @@ export function GateOverlay({ trackId, visitorId, gateConfig, children }: Props)
   }
 
   // ── render ───────────────────────────────────────────────────────────────
-  if (!enabled || submitted) return <>{children}</>
+  if (!enabled || bypassGate || submitted) return <>{children}</>
 
   return (
     <div className="relative w-full h-full overflow-hidden">

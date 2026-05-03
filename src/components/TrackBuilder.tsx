@@ -4,7 +4,6 @@ import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -15,10 +14,11 @@ import {
 import {
   FileText, Video, Link2, Image as ImageIcon,
   Plus, ChevronUp, ChevronDown, Loader2,
-  GripVertical, UploadCloud, X, Mail, ChevronRight,
+  GripVertical, X, Mail, ChevronRight,
 } from 'lucide-react'
-import { createTrack, updateTrack, bulkImportUrls } from '@/app/dashboard/tracks/actions'
+import { createTrack, updateTrack } from '@/app/dashboard/tracks/actions'
 import type { LeadField, GateConfig } from '@/components/GateOverlay'
+import { AssetUploadDialog } from '@/components/AssetUploadDialog'
 
 type Asset = {
   id: string
@@ -71,9 +71,6 @@ export function TrackBuilder({
   const [layout, setLayout] = useState<TrackData['layout']>(initialTrack?.layout ?? 'binge')
   const [status, setStatus] = useState<TrackData['status']>(initialTrack?.status ?? 'draft')
   const [selectedIds, setSelectedIds] = useState<string[]>(initialTrack?.assetIds ?? [])
-  const [bulkUrls, setBulkUrls] = useState('')
-  const [bulkLoading, setBulkLoading] = useState(false)
-  const [bulkResult, setBulkResult] = useState<{ count: number; errors: number } | null>(null)
   const [importedAssets, setImportedAssets] = useState<Asset[]>([])
   const [isPending, startTransition] = useTransition()
 
@@ -155,23 +152,9 @@ export function TrackBuilder({
     })
   }
 
-  async function handleBulkImport() {
-    if (!bulkUrls.trim()) return
-    setBulkLoading(true)
-    setBulkResult(null)
-    const { results, errors } = await bulkImportUrls(orgId, bulkUrls)
-    const newAssets: Asset[] = results.map((r) => ({
-      id: r.assetId,
-      title: r.title,
-      type: 'article',
-      thumbnailUrl: null,
-      sourceUrl: r.url,
-    }))
+  function handleAssetsAdded(newAssets: Asset[]) {
     setImportedAssets((prev) => [...prev, ...newAssets])
-    setSelectedIds((prev) => [...prev, ...newAssets.map((a) => a.id)])
-    setBulkResult({ count: results.length, errors: errors.length })
-    setBulkUrls('')
-    setBulkLoading(false)
+    setSelectedIds((prev) => [...prev, ...newAssets.map((a) => a.id).filter((id) => !prev.includes(id))])
   }
 
   function handleSave() {
@@ -304,54 +287,22 @@ export function TrackBuilder({
           </p>
         </div>
 
-        {/* Right: Asset library + bulk import */}
+        {/* Right: Asset library */}
         <div className="space-y-4">
-
-          {/* Bulk URL import */}
-          <div className="rounded-xl border bg-card p-5 space-y-3">
-            <div>
-              <h2 className="font-semibold text-sm">Bulk Import URLs</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Paste URLs, one per line — articles, YouTube videos, PDFs</p>
-            </div>
-            <Textarea
-              placeholder={`https://blog.example.com/post-1\nhttps://youtube.com/watch?v=...\nhttps://docs.example.com/page`}
-              value={bulkUrls}
-              onChange={(e) => setBulkUrls(e.target.value)}
-              rows={4}
-              className="resize-none font-mono text-xs"
-            />
-            {bulkResult && (
-              <p className="text-xs">
-                <span className="text-primary font-medium">✓ {bulkResult.count} imported</span>
-                {bulkResult.errors > 0 && (
-                  <span className="text-destructive ml-2">{bulkResult.errors} failed</span>
-                )}
-              </p>
-            )}
-            <Button
-              onClick={handleBulkImport}
-              disabled={bulkLoading || !bulkUrls.trim()}
-              size="sm"
-              className="w-full"
-            >
-              {bulkLoading ? (
-                <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Importing…</>
-              ) : (
-                <><UploadCloud className="mr-2 h-3.5 w-3.5" /> Import & add to track</>
-              )}
-            </Button>
-          </div>
 
           {/* Asset library */}
           <div className="rounded-xl border bg-card p-5 space-y-3">
-            <div>
-              <h2 className="font-semibold text-sm">Asset Library</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Click to add to track</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-sm">Asset Library</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Click to add to track</p>
+              </div>
+              <AssetUploadDialog organizationId={orgId} onAssetsAdded={handleAssetsAdded} />
             </div>
             {libraryAssets.length === 0 ? (
               <div className="flex h-20 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
                 {allAvailableAssets.length === 0
-                  ? 'No assets yet — import URLs above or upload in Asset Library'
+                  ? 'No assets yet — add one from the button above'
                   : 'All assets are in the track'}
               </div>
             ) : (

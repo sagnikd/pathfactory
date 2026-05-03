@@ -36,6 +36,10 @@ function titleFromUrl(url: string): string {
   }
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error'
+}
+
 export async function addUrlAsset(organizationId: string, url: string) {
   try {
     let type: 'video' | 'article' | 'image' | 'pdf' = 'article'
@@ -93,20 +97,20 @@ export async function addUrlAsset(organizationId: string, url: string) {
       }
     }
 
-    await db.insert(assets).values({
+    const [asset] = await db.insert(assets).values({
       organizationId,
       type,
       title,
       description,
       sourceUrl: url,
       thumbnailUrl,
-    })
+    }).returning()
 
     revalidatePath('/dashboard/assets')
-    return { success: true }
-  } catch (error: any) {
+    return { success: true, asset }
+  } catch (error: unknown) {
     console.error(error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 }
 
@@ -120,8 +124,8 @@ export async function updateAsset(
       .where(eq(assets.id, assetId))
     revalidatePath('/dashboard/assets')
     return { success: true }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) }
   }
 }
 
@@ -130,18 +134,18 @@ export async function addFileAsset(
   fileData: { fileUrl: string; title: string; type: 'pdf' | 'image' | 'video'; thumbnailUrl?: string }
 ) {
   try {
-    await db.insert(assets).values({
+    const [asset] = await db.insert(assets).values({
       organizationId,
       type: fileData.type,
       title: fileData.title,
       fileUrl: fileData.fileUrl,
       thumbnailUrl: fileData.thumbnailUrl ?? null,
-    })
+    }).returning()
 
     revalidatePath('/dashboard/assets')
-    return { success: true }
-  } catch (error: any) {
+    return { success: true, asset }
+  } catch (error: unknown) {
     console.error(error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 }
