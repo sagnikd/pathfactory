@@ -31,7 +31,7 @@ export function NavSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean })
           <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
             <Layers className="w-4 h-4 text-primary-foreground" />
           </div>
-          <span className="tracking-tight">PathFactory</span>
+          <span className="tracking-tight text-sm">Content Engagement Platform</span>
         </Link>
       </div>
       <div className="flex-1 overflow-auto py-4">
@@ -81,7 +81,7 @@ export function NavSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean })
           Log out
         </button>
         <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-          PathFactory Clone v1.0
+          Content Engagement Platform
         </div>
       </div>
     </aside>

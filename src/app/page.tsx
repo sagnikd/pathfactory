@@ -6,7 +6,7 @@ export default function Home() {
     <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground">
       <main className="flex flex-col items-center text-center gap-8 max-w-2xl px-4">
         <h1 className="text-5xl font-extrabold tracking-tight">
-          Welcome to PathFactory Clone
+          Welcome to Content Engagement Platform
         </h1>
         <p className="text-xl text-muted-foreground">
           Curate "content tracks" (videos, PDFs, articles) into binge-able streams and capture granular engagement events.

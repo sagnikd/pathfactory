@@ -27,7 +27,7 @@ export default async function DashboardLayout({
       // Auto-provision the super-admin org (idempotent — catches duplicate slug)
       try {
         const [org] = await db.insert(organizations).values({
-          name: 'PathFactory Admin',
+          name: 'Content Engagement Platform Admin',
           slug: 'pathfactory-admin',
         }).returning()
         await db.insert(users).values({

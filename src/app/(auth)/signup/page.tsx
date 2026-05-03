@@ -21,7 +21,7 @@ export default async function SignupPage({
           <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
             <Layers className="w-5 h-5 text-white" />
           </div>
-          <span className="text-white font-semibold text-xl tracking-tight">PathFactory</span>
+          <span className="text-white font-semibold text-xl tracking-tight">Content Engagement Platform</span>
         </div>
         <div className="space-y-6">
           <blockquote className="text-white/90 text-2xl font-light leading-relaxed">
@@ -33,7 +33,7 @@ export default async function SignupPage({
             <li className="flex items-center gap-2"><span className="text-white">✓</span> Measure every scroll & click</li>
           </ul>
         </div>
-        <p className="text-white/40 text-xs">© 2025 PathFactory Clone</p>
+        <p className="text-white/40 text-xs">© 2025 Content Engagement Platform</p>
       </div>
 
       {/* Right form panel */}
@@ -44,7 +44,7 @@ export default async function SignupPage({
             <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center">
               <Layers className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-xl tracking-tight">PathFactory</span>
+            <span className="font-semibold text-xl tracking-tight">Content Engagement Platform</span>
           </div>
 
           <div className="space-y-2">
