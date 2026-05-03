@@ -16,6 +16,15 @@ function extractYouTubeId(url: string): string | null {
   return null
 }
 
+function isCloudinaryPlayerUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return u.hostname === 'player.cloudinary.com' && u.pathname.startsWith('/embed')
+  } catch {
+    return false
+  }
+}
+
 function titleFromUrl(url: string): string {
   try {
     const u = new URL(url)
@@ -116,7 +125,7 @@ export async function bulkImportUrls(orgId: string, rawUrls: string) {
       let description: string | null = null
 
       const isYouTube = url.includes('youtube.com') || url.includes('youtu.be')
-      if (isYouTube || url.includes('vimeo.com')) {
+      if (isYouTube || url.includes('vimeo.com') || isCloudinaryPlayerUrl(url)) {
         type = 'video'
         if (isYouTube) {
           const videoId = extractYouTubeId(url)

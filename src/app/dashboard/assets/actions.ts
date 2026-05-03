@@ -15,6 +15,15 @@ function extractYouTubeId(url: string): string | null {
   return null
 }
 
+function isCloudinaryPlayerUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return u.hostname === 'player.cloudinary.com' && u.pathname.startsWith('/embed')
+  } catch {
+    return false
+  }
+}
+
 function cleanTitle(raw: string, fallbackUrl: string): string {
   if (!raw) return titleFromUrl(fallbackUrl)
   // Strip everything after common nav separators injected by some CMSes
@@ -49,8 +58,9 @@ export async function addUrlAsset(organizationId: string, url: string) {
 
     const isYouTube = url.includes('youtube.com') || url.includes('youtu.be')
     const isVimeo = url.includes('vimeo.com')
+    const isCloudinary = isCloudinaryPlayerUrl(url)
 
-    if (isYouTube || isVimeo) {
+    if (isYouTube || isVimeo || isCloudinary) {
       type = 'video'
 
       if (isYouTube) {

@@ -28,6 +28,15 @@ function getVimeoEmbedUrl(url: string): string | null {
   } catch { return null }
 }
 
+function isCloudinaryPlayerUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return u.hostname === 'player.cloudinary.com' && u.pathname.startsWith('/embed')
+  } catch {
+    return false
+  }
+}
+
 function formatTime(secs: number): string {
   const h = Math.floor(secs / 3600)
   const m = Math.floor((secs % 3600) / 60)
@@ -92,12 +101,15 @@ export function AssetViewer({ asset, sessionId, onComplete }: any) {
     onComplete()
   }, [showCountdown, countdown, onComplete])
 
+  const sourceUrl: string = asset.fileUrl || asset.sourceUrl || ''
+  const treatAsCloudinaryVideo = asset.type === 'article' && isCloudinaryPlayerUrl(sourceUrl)
+
   return (
     <div className="relative w-full h-full">
-      {asset.type === 'video'   && <VideoViewer   asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
+      {(asset.type === 'video' || treatAsCloudinaryVideo) && <VideoViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
       {asset.type === 'pdf'     && <PdfViewer     asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
       {asset.type === 'article' && /\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <PdfViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
-      {asset.type === 'article' && !/\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <ArticleViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
+      {asset.type === 'article' && !treatAsCloudinaryVideo && !/\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <ArticleViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
       {asset.type === 'image'   && <ImageViewer   asset={asset}                       onComplete={handleAssetComplete} />}
 
       {showCountdown && (
@@ -129,18 +141,19 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
   const raw: string = asset.fileUrl || asset.sourceUrl || ''
   const isYouTube = raw.includes('youtube.com') || raw.includes('youtu.be')
   const isVimeo   = raw.includes('vimeo.com')
+  const isCloudinary = isCloudinaryPlayerUrl(raw)
 
   if (isYouTube) {
     return <YouTubeViewer url={raw} asset={asset} sessionId={sessionId} onComplete={onComplete} />
   }
 
-  if (isVimeo) {
+  if (isVimeo || isCloudinary) {
     const embedUrl = getVimeoEmbedUrl(raw)
     return (
       <div className="w-full h-full flex flex-col bg-black">
         <div className="flex-1 relative">
           <iframe
-            src={embedUrl ?? raw}
+            src={isCloudinary ? raw : (embedUrl ?? raw)}
             className="absolute inset-0 w-full h-full border-0"
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
