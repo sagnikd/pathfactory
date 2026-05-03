@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Building2, FileText, LayoutDashboard, Users, ChevronDown, ChevronUp, UserPlus, Trash2, Loader2 } from 'lucide-react'
-import { addUserToOrg, removeUserFromOrg } from './actions'
+import { Building2, FileText, LayoutDashboard, Users, ChevronDown, ChevronUp, UserPlus, Trash2, Loader2, LogIn } from 'lucide-react'
+import { addUserToOrg, removeUserFromOrg, deleteOrganization, impersonateUser } from './actions'
+import { useRouter } from 'next/navigation'
 
 type OrgUser = { id: string; email: string; role: string }
 
@@ -20,6 +21,7 @@ type Props = {
 }
 
 export function OrgCard({ org, orgUsers: initialOrgUsers }: Props) {
+  const router = useRouter()
   const [expanded, setExpanded] = useState(false)
   const [members, setMembers] = useState<OrgUser[]>(initialOrgUsers)
   const [userCount, setUserCount] = useState(org.userCount)
@@ -27,6 +29,9 @@ export function OrgCard({ org, orgUsers: initialOrgUsers }: Props) {
   const [role, setRole] = useState<'admin' | 'editor'>('editor')
   const [loading, setLoading] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [impersonating, setImpersonating] = useState<string | null>(null)
+  const [deletingOrg, setDeletingOrg] = useState(false)
+  const [deleted, setDeleted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
@@ -63,6 +68,37 @@ export function OrgCard({ org, orgUsers: initialOrgUsers }: Props) {
     }
   }
 
+  async function handleDeleteOrg() {
+    if (!confirm(`Delete organisation "${org.name}" and all its assets, tracks, users, and leads? This cannot be undone.`)) {
+      return
+    }
+    setDeletingOrg(true)
+    setError(null)
+    setSuccess(null)
+    const res = await deleteOrganization(org.id)
+    setDeletingOrg(false)
+    if (res.success) {
+      setDeleted(true)
+    } else {
+      setError(res.error ?? 'Failed to delete organisation')
+    }
+  }
+
+  async function handleImpersonate(userId: string, userEmail: string) {
+    if (!confirm(`Login as ${userEmail}?`)) return
+    setImpersonating(userId)
+    const res = await impersonateUser(userId)
+    setImpersonating(null)
+    if (res.success) {
+      router.push('/dashboard')
+      router.refresh()
+    } else {
+      setError(res.error ?? 'Failed to login as user')
+    }
+  }
+
+  if (deleted) return null
+
   return (
     <div className="rounded-xl border bg-background overflow-hidden">
       {/* Header row */}
@@ -86,6 +122,16 @@ export function OrgCard({ org, orgUsers: initialOrgUsers }: Props) {
             <Stat icon={<LayoutDashboard className="w-3.5 h-3.5" />} label="tracks" value={org.trackCount} />
             <Stat icon={<Users className="w-3.5 h-3.5" />} label="users" value={userCount} />
           </div>
+          <button
+            onClick={handleDeleteOrg}
+            disabled={deletingOrg}
+            className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+            title="Delete organisation"
+          >
+            {deletingOrg
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Trash2 className="w-4 h-4" />}
+          </button>
           <button
             onClick={() => setExpanded(v => !v)}
             className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
@@ -122,6 +168,16 @@ export function OrgCard({ org, orgUsers: initialOrgUsers }: Props) {
                       {removing === u.id
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         : <Trash2 className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      onClick={() => handleImpersonate(u.id, u.email)}
+                      disabled={impersonating === u.id}
+                      className="shrink-0 p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+                      title="Login as this user"
+                    >
+                      {impersonating === u.id
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <LogIn className="w-3.5 h-3.5" />}
                     </button>
                   </li>
                 ))}

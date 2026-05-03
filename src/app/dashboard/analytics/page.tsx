@@ -1,10 +1,9 @@
 import { db } from '@/db'
-import { engagements, sessions, visitors, assets, users } from '@/db/schema'
+import { engagements, sessions, visitors, assets } from '@/db/schema'
 import { eq, count, sql, desc, inArray } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AnalyticsCharts from './AnalyticsCharts'
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 
 function fmtDwell(secs: number): string {
   if (secs < 60) return `${secs}s`
@@ -14,14 +13,8 @@ function fmtDwell(secs: number): string {
 }
 
 export default async function AnalyticsDashboard() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return redirect('/login')
-
-  const userOrgs = await db.select().from(users).where(eq(users.id, user.id))
-  const userRecord = userOrgs[0]
-  if (!userRecord || !userRecord.organizationId) return redirect('/login')
-  const orgId = userRecord.organizationId
+  const { dbUser } = await getDashboardAuthContext()
+  const orgId = dbUser.organizationId
 
   // 1. Overview stats
   // Total visitors and sessions are global for the org right now. To be precise, we filter by assets belonging to the org.

@@ -6,6 +6,8 @@ import { db } from '@/db'
 import { users, organizations } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { IMPERSONATE_COOKIE } from '@/lib/auth/impersonation'
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL ?? ''
 
@@ -57,5 +59,53 @@ export async function removeUserFromOrg(
   await db.delete(users).where(eq(users.id, userId))
 
   revalidatePath('/dashboard/admin')
+  return { success: true }
+}
+
+/** Permanently delete an organization and all linked data (cascade). */
+export async function deleteOrganization(
+  orgId: string
+): Promise<{ success: boolean; error?: string }> {
+  await assertSuperAdmin()
+
+  const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId))
+  if (!org) return { success: false, error: 'Organisation not found' }
+
+  // Keep the bootstrap super-admin org protected.
+  if (org.slug === 'pathfactory-admin') {
+    return { success: false, error: 'Cannot delete the super admin organisation.' }
+  }
+
+  await db.delete(organizations).where(eq(organizations.id, orgId))
+  revalidatePath('/dashboard/admin')
+  return { success: true }
+}
+
+export async function impersonateUser(
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  await assertSuperAdmin()
+
+  const [target] = await db.select().from(users).where(eq(users.id, userId))
+  if (!target) return { success: false, error: 'User not found' }
+
+  const cookieStore = await cookies()
+  cookieStore.set(IMPERSONATE_COOKIE, target.id, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60 * 8,
+  })
+
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
+export async function stopImpersonation(): Promise<{ success: boolean }> {
+  await assertSuperAdmin()
+  const cookieStore = await cookies()
+  cookieStore.delete(IMPERSONATE_COOKIE)
+  revalidatePath('/dashboard')
   return { success: true }
 }

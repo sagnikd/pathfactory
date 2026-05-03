@@ -1,18 +1,13 @@
 import { db } from '@/db'
-import { tracks, users, trackAssets } from '@/db/schema'
+import { tracks, trackAssets } from '@/db/schema'
 import { eq, desc, count } from 'drizzle-orm'
-import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Plus, LayoutDashboard, ArrowRight } from 'lucide-react'
+import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 
 export default async function TracksPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  const [dbUser] = await db.select().from(users).where(eq(users.id, user.id))
-  if (!dbUser) return null
+  const { dbUser } = await getDashboardAuthContext()
 
   const orgTracks = await db.select().from(tracks)
     .where(eq(tracks.organizationId, dbUser.organizationId))

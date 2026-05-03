@@ -1,18 +1,13 @@
 import { db } from '@/db'
-import { assets, users } from '@/db/schema'
+import { assets } from '@/db/schema'
 import { eq, desc } from 'drizzle-orm'
-import { createClient } from '@/lib/supabase/server'
 import { TrackBuilder } from '@/components/TrackBuilder'
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
+import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 
 export default async function NewTrackPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  const [dbUser] = await db.select().from(users).where(eq(users.id, user.id))
-  if (!dbUser) return null
+  const { dbUser } = await getDashboardAuthContext()
 
   const orgAssets = await db.select().from(assets)
     .where(eq(assets.organizationId, dbUser.organizationId))

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { FileText, LayoutDashboard, Settings, Layers, BarChart2, Users, ShieldCheck, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { stopImpersonation } from '@/app/dashboard/admin/actions'
 
 const navItems = [
   { href: '/dashboard/assets', label: 'Asset Library', icon: FileText },
@@ -14,7 +15,13 @@ const navItems = [
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ]
 
-export function NavSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
+export function NavSidebar({
+  isSuperAdmin = false,
+  isImpersonating = false,
+}: {
+  isSuperAdmin?: boolean
+  isImpersonating?: boolean
+}) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -22,6 +29,11 @@ export function NavSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean })
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  async function handleStopImpersonation() {
+    await stopImpersonation()
+    router.refresh()
   }
 
   return (
@@ -73,6 +85,15 @@ export function NavSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean })
         </div>
       )}
       <div className="border-t px-3 py-3 space-y-1">
+        {isSuperAdmin && isImpersonating && (
+          <button
+            onClick={handleStopImpersonation}
+            className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+          >
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            Stop Impersonating
+          </button>
+        )}
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"

@@ -1,20 +1,13 @@
 import { db } from '@/db'
-import { leads, visitors, sessions, engagements, assets, users } from '@/db/schema'
+import { leads, visitors, sessions, engagements, assets } from '@/db/schema'
 import { eq, inArray, desc } from 'drizzle-orm'
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
 import LeadClientList from './LeadClientList'
 import { computeLeadScores } from '@/lib/leadScore'
+import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 
 export default async function LeadsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return redirect('/login')
-
-  const userOrgs = await db.select().from(users).where(eq(users.id, user.id))
-  const userRecord = userOrgs[0]
-  if (!userRecord || !userRecord.organizationId) return redirect('/login')
-  const orgId = userRecord.organizationId
+  const { dbUser } = await getDashboardAuthContext()
+  const orgId = dbUser.organizationId
 
   // Find visitors who interacted with this org's assets
   const orgAssets = await db.select({ id: assets.id }).from(assets).where(eq(assets.organizationId, orgId))
@@ -58,7 +51,7 @@ export default async function LeadsPage() {
   .orderBy(desc(engagements.ts))
 
   // Group timeline by visitor
-  const timelinesByVisitor: Record<string, any[]> = {}
+  const timelinesByVisitor: Record<string, typeof timelineData> = {}
   for (const event of timelineData) {
     if (!timelinesByVisitor[event.visitorId]) {
       timelinesByVisitor[event.visitorId] = []

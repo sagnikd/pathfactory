@@ -4,6 +4,8 @@ import { db } from '@/db'
 import { users, organizations } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { NavSidebar } from '@/components/NavSidebar'
+import { cookies } from 'next/headers'
+import { IMPERSONATE_COOKIE } from '@/lib/auth/impersonation'
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL ?? ''
 
@@ -18,6 +20,8 @@ export default async function DashboardLayout({
   if (!user) redirect('/login')
 
   const isSuperAdmin = !!SUPER_ADMIN_EMAIL && user.email === SUPER_ADMIN_EMAIL
+  const cookieStore = await cookies()
+  const isImpersonating = isSuperAdmin && !!cookieStore.get(IMPERSONATE_COOKIE)?.value
 
   // Ensure a DB user row exists
   const [dbUser] = await db.select().from(users).where(eq(users.id, user.id))
@@ -59,7 +63,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen w-full bg-muted/30">
-      <NavSidebar isSuperAdmin={isSuperAdmin} />
+      <NavSidebar isSuperAdmin={isSuperAdmin} isImpersonating={isImpersonating} />
       <div className="flex flex-col flex-1 sm:pl-60">
         <main className="flex-1 p-6 md:p-8">
           {children}

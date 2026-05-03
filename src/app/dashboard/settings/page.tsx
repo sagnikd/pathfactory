@@ -1,12 +1,12 @@
 import { db } from '@/db'
-import { users, organizations, webhooks } from '@/db/schema'
+import { organizations, webhooks } from '@/db/schema'
 import { eq } from 'drizzle-orm'
-import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Settings, Globe, Webhook, Trash2 } from 'lucide-react'
+import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 
 async function updateOrgName(formData: FormData) {
   'use server'
@@ -40,12 +40,7 @@ async function removeWebhook(formData: FormData) {
 }
 
 export default async function SettingsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  const [dbUser] = await db.select().from(users).where(eq(users.id, user.id))
-  if (!dbUser) return null
+  const { dbUser } = await getDashboardAuthContext()
 
   const [org] = await db.select().from(organizations).where(eq(organizations.id, dbUser.organizationId))
   const orgWebhooks = await db.select().from(webhooks).where(eq(webhooks.organizationId, dbUser.organizationId))

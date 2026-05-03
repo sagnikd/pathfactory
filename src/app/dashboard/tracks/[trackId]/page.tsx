@@ -1,13 +1,13 @@
 import { db } from '@/db'
-import { assets, users, tracks, trackAssets, organizations } from '@/db/schema'
+import { assets, tracks, trackAssets, organizations } from '@/db/schema'
 import { eq, desc, asc } from 'drizzle-orm'
-import { createClient } from '@/lib/supabase/server'
 import { TrackBuilder } from '@/components/TrackBuilder'
 import Link from 'next/link'
 import { ChevronLeft, ExternalLink } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { deleteTrack } from '../actions'
 import { Button } from '@/components/ui/button'
+import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 
 export default async function EditTrackPage({
   params,
@@ -16,12 +16,7 @@ export default async function EditTrackPage({
 }) {
   const { trackId } = await params
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  const [dbUser] = await db.select().from(users).where(eq(users.id, user.id))
-  if (!dbUser) return null
+  const { dbUser } = await getDashboardAuthContext()
 
   const [org] = await db.select().from(organizations).where(eq(organizations.id, dbUser.organizationId))
 
@@ -77,7 +72,19 @@ export default async function EditTrackPage({
           layout: track.layout,
           status: track.status,
           assetIds,
-          gateConfigJson: track.gateConfigJson as any,
+          gateConfigJson: track.gateConfigJson as null | {
+            enabled: boolean
+            delaySeconds: number
+            heading: string
+            description: string
+            fields: Array<{
+              name: string
+              label: string
+              type: 'email' | 'text' | 'tel'
+              enabled: boolean
+              required: boolean
+            }>
+          },
         }}
       />
     </div>
