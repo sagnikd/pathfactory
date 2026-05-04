@@ -100,7 +100,17 @@ export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }
     }
 
     const handleFocus = () => startTicking()
-    const handleBlur  = () => stopTicking()
+
+    const handleBlur = () => {
+      // When the user clicks into an iframe (video player, article embed) the
+      // parent window fires blur but the visitor is still actively watching.
+      // Use setTimeout(0) to let the browser update activeElement first, then
+      // only pause if focus truly left the page (not just moved to an iframe).
+      setTimeout(() => {
+        if (document.activeElement?.tagName === 'IFRAME') return
+        stopTicking()
+      }, 0)
+    }
 
     // Kick off only if already active on mount
     if (isActive()) startTicking()

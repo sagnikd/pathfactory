@@ -47,28 +47,61 @@ function isTelecomOrISP(org: string): boolean {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function clientGeoLookup(): Promise<GeoResult> {
-  const empty: GeoResult = { company: null, country: null, city: null }
+async function tryIpApiCo(): Promise<GeoResult | null> {
   try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 4000)
-    const res = await fetch('https://ipapi.co/json/', { signal: controller.signal })
-    clearTimeout(timeout)
-    if (!res.ok) return empty
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 4000)
+    const res = await fetch('https://ipapi.co/json/', { signal: ctrl.signal })
+    clearTimeout(t)
+    if (!res.ok) return null
     const d = await res.json()
-    if (d.error) return empty
+    if (d.error) return null
 
     const rawOrg = d.org ? String(d.org).replace(/^AS\d+\s+/i, '').trim() : ''
-    // Null out telecom/ISP/cloud names — WFH visitors appear on their home
-    // broadband or mobile network, not their actual employer.
     const company = rawOrg && !isTelecomOrISP(rawOrg) ? rawOrg : null
-
     return {
       company,
       country: d.country_name ?? null,
       city:    d.city ?? null,
     }
   } catch {
-    return empty
+    return null
   }
+}
+
+async function tryIpApiCom(): Promise<GeoResult | null> {
+  // ip-api.com has better accuracy for Asian ISPs and broader IPv6 coverage.
+  // Free tier: no key needed, 45 req/min per IP (well within visitor usage).
+  try {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 4000)
+    const res = await fetch('https://ip-api.com/json/?fields=status,country,city,org', { signal: ctrl.signal })
+    clearTimeout(t)
+    if (!res.ok) return null
+    const d = await res.json()
+    if (d.status !== 'success') return null
+
+    const rawOrg = d.org ? String(d.org).replace(/^AS\d+\s+/i, '').trim() : ''
+    const company = rawOrg && !isTelecomOrISP(rawOrg) ? rawOrg : null
+    return {
+      company,
+      country: d.country ?? null,
+      city:    d.city    ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function clientGeoLookup(): Promise<GeoResult> {
+  const empty: GeoResult = { company: null, country: null, city: null }
+
+  // Try both providers in parallel — take whichever returns a result first;
+  // if both succeed, prefer ip-api.com (more accurate for Asia/India).
+  const [a, b] = await Promise.allSettled([tryIpApiCo(), tryIpApiCom()])
+  const resultA = a.status === 'fulfilled' ? a.value : null
+  const resultB = b.status === 'fulfilled' ? b.value : null
+
+  // Prefer ip-api.com result when available; fall back to ipapi.co; then empty
+  return resultB ?? resultA ?? empty
 }
