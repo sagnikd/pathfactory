@@ -98,6 +98,7 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
   const selectedTimeline = selectedVisitorId ? timelines[selectedVisitorId] || [] : []
 
   return (
+    <>
     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
       <div className="col-span-1 md:col-span-2">
         <Card>
@@ -281,5 +282,6 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
         </CardContent>
       </Card>
     </div>
+    </>
   )
 }
