@@ -132,7 +132,7 @@ export default async function PublicTrackPage({
     }}>
       <TrackViewer 
         track={track} 
-        assets={sortedAssets.map(a => ({ ...a, metadataJson: a.metadataJson as { tags?: string[] } | null }))}
+        assets={sortedAssets as any[]}
         org={org} 
         sessionId={sessionId} 
         visitorId={visitorId}
