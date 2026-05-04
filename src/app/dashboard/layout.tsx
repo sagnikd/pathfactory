@@ -79,9 +79,11 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen w-full bg-muted/30">
       <NavSidebar isSuperAdmin={isSuperAdmin} isImpersonating={isImpersonating} />
-      <main className="flex-1 sm:pl-60 p-6 md:p-8">
-        {children}
-      </main>
+      <div className="flex flex-col flex-1 sm:pl-60">
+        <main className="flex-1 p-6 md:p-8">
+          {children}
+        </main>
+      </div>
     </div>
   )
 }
