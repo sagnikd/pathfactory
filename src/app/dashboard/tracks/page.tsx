@@ -12,6 +12,10 @@ export default async function TracksPage() {
   const orgTracks = await db.select().from(tracks)
     .where(eq(tracks.organizationId, dbUser.organizationId))
     .orderBy(desc(tracks.createdAt))
+  const regularTracks = orgTracks.filter((track) => {
+    const theme = (track.themeJson as { kind?: string } | null) ?? null
+    return theme?.kind !== 'experience'
+  })
 
   const assetCounts = await db
     .select({ trackId: trackAssets.trackId, count: count() })
@@ -35,7 +39,7 @@ export default async function TracksPage() {
         </Link>
       </div>
 
-      {orgTracks.length === 0 ? (
+      {regularTracks.length === 0 ? (
         <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed gap-4">
           <div className="w-12 h-12 bg-accent rounded-xl flex items-center justify-center">
             <LayoutDashboard className="w-6 h-6 text-primary" />
@@ -53,7 +57,7 @@ export default async function TracksPage() {
         </div>
       ) : (
         <div className="grid gap-3">
-          {orgTracks.map((track) => (
+          {regularTracks.map((track) => (
             <div
               key={track.id}
               className="flex items-center justify-between rounded-xl border bg-card px-5 py-4 hover:border-primary/30 transition-colors"

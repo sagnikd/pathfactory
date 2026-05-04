@@ -37,7 +37,6 @@ type TrackData = {
   gateConfigJson?: GateConfig | null
   themeJson?: {
     seoTitle?: string
-    faviconUrl?: string
   } | null
 }
 
@@ -77,7 +76,6 @@ export function TrackBuilder({
   const [selectedIds, setSelectedIds] = useState<string[]>(initialTrack?.assetIds ?? [])
   const [importedAssets, setImportedAssets] = useState<Asset[]>([])
   const [seoTitle, setSeoTitle] = useState(initialTrack?.themeJson?.seoTitle ?? '')
-  const [faviconUrl, setFaviconUrl] = useState(initialTrack?.themeJson?.faviconUrl ?? '')
   const [isPending, startTransition] = useTransition()
 
   // ── Lead capture config ──────────────────────────────────────────────────
@@ -174,7 +172,6 @@ export function TrackBuilder({
     }
     const themeJson = {
       seoTitle: seoTitle.trim() || null,
-      faviconUrl: faviconUrl.trim() || null,
     }
     startTransition(async () => {
       if (initialTrack?.id) {
@@ -232,11 +229,11 @@ export function TrackBuilder({
         </div>
       </div>
 
-      {/* SEO + favicon */}
+      {/* SEO */}
       <div className="rounded-xl border bg-card p-5 space-y-4">
         <div>
-          <h2 className="font-semibold text-sm">SEO & Tab Branding</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Customize browser tab title and favicon for this public track</p>
+          <h2 className="font-semibold text-sm">SEO</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Customize browser tab title for this public track</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
@@ -246,16 +243,6 @@ export function TrackBuilder({
               placeholder="Content Engagement Platform | Product Tour"
               value={seoTitle}
               onChange={(e) => setSeoTitle(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="favicon-url">Favicon URL</Label>
-            <Input
-              id="favicon-url"
-              type="url"
-              placeholder="https://example.com/favicon.png"
-              value={faviconUrl}
-              onChange={(e) => setFaviconUrl(e.target.value)}
             />
           </div>
         </div>

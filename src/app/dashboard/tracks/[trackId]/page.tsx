@@ -74,7 +74,6 @@ export default async function EditTrackPage({
           assetIds,
           themeJson: (track.themeJson as {
             seoTitle?: string
-            faviconUrl?: string
           } | null) ?? null,
           gateConfigJson: track.gateConfigJson as null | {
             enabled: boolean

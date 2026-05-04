@@ -1,6 +1,6 @@
 import { db } from '@/db'
-import { organizations, webhooks } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { organizations, tracks, webhooks } from '@/db/schema'
+import { desc, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,12 +8,37 @@ import { Label } from '@/components/ui/label'
 import { Settings, Globe, Webhook, Trash2 } from 'lucide-react'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 
+type ThemeWithFavicon = {
+  faviconUrl?: string | null
+}
+
 async function updateOrgName(formData: FormData) {
   'use server'
   const orgId = formData.get('orgId') as string
   const name = formData.get('name') as string
   if (!name?.trim()) return
   await db.update(organizations).set({ name: name.trim() }).where(eq(organizations.id, orgId))
+  revalidatePath('/dashboard/settings')
+}
+
+async function updateOrgBranding(formData: FormData) {
+  'use server'
+  const orgId = formData.get('orgId') as string
+  const faviconUrl = (formData.get('faviconUrl') as string | null)?.trim() ?? ''
+  const orgTracks = await db.select({ id: tracks.id, themeJson: tracks.themeJson })
+    .from(tracks)
+    .where(eq(tracks.organizationId, orgId))
+
+  for (const track of orgTracks) {
+    const existingTheme = (track.themeJson as Record<string, unknown> | null) ?? {}
+    await db.update(tracks).set({
+      themeJson: {
+        ...existingTheme,
+        faviconUrl: faviconUrl || null,
+      },
+    }).where(eq(tracks.id, track.id))
+  }
+
   revalidatePath('/dashboard/settings')
 }
 
@@ -43,7 +68,15 @@ export default async function SettingsPage() {
   const { dbUser } = await getDashboardAuthContext()
 
   const [org] = await db.select().from(organizations).where(eq(organizations.id, dbUser.organizationId))
+  const orgTracks = await db.select({ themeJson: tracks.themeJson })
+    .from(tracks)
+    .where(eq(tracks.organizationId, dbUser.organizationId))
+    .orderBy(desc(tracks.updatedAt))
   const orgWebhooks = await db.select().from(webhooks).where(eq(webhooks.organizationId, dbUser.organizationId))
+  const defaultFavicon =
+    orgTracks
+      .map((t) => ((t.themeJson as ThemeWithFavicon | null)?.faviconUrl ?? '').trim())
+      .find((url) => url.length > 0) ?? ''
 
   return (
     <div className="space-y-8 max-w-2xl">
@@ -76,6 +109,25 @@ export default async function SettingsPage() {
             </code>
           </div>
           <Button type="submit" size="sm">Save name</Button>
+        </form>
+
+        <form action={updateOrgBranding} className="space-y-4 pt-2 border-t">
+          <input type="hidden" name="orgId" value={org.id} />
+          <div className="space-y-1.5">
+            <Label htmlFor="org-favicon-url">Default favicon URL</Label>
+            <Input
+              id="org-favicon-url"
+              name="faviconUrl"
+              type="url"
+              defaultValue={defaultFavicon}
+              placeholder="https://example.com/favicon.ico"
+              className="max-w-xl"
+            />
+            <p className="text-xs text-muted-foreground">
+              This favicon will be used for public track and experience pages.
+            </p>
+          </div>
+          <Button type="submit" size="sm">Save branding</Button>
         </form>
       </section>
 

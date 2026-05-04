@@ -5,6 +5,7 @@ import { db } from '@/db'
 import { assets } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import * as cheerio from 'cheerio'
+import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 
 function extractYouTubeId(url: string): string | null {
   try {
@@ -49,6 +50,10 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error'
 }
 
+function pageScreenshotUrl(url: string): string {
+  return `https://image.thum.io/get/width/1200/crop/720/noanimate/${url}`
+}
+
 export async function addUrlAsset(organizationId: string, url: string) {
   try {
     let type: 'video' | 'article' | 'image' | 'pdf' = 'article'
@@ -83,6 +88,7 @@ export async function addUrlAsset(organizationId: string, url: string) {
     } else if (/\.pdf(\?.*)?$/i.test(url)) {
       type = 'pdf'
       title = titleFromUrl(url)
+      thumbnailUrl = pageScreenshotUrl(url)
     } else {
       try {
         const response = await fetch(url, {
@@ -104,6 +110,9 @@ export async function addUrlAsset(organizationId: string, url: string) {
         }
       } catch (e) {
         console.error('Failed to scrape URL', e)
+      }
+      if (!thumbnailUrl) {
+        thumbnailUrl = pageScreenshotUrl(url)
       }
     }
 
@@ -173,6 +182,30 @@ export async function addFileAsset(
     return { success: true, asset }
   } catch (error: unknown) {
     console.error(error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+}
+
+export async function deleteAsset(assetId: string) {
+  try {
+    const { dbUser } = await getDashboardAuthContext()
+    const [asset] = await db.select({
+      id: assets.id,
+      organizationId: assets.organizationId,
+    })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+
+    if (!asset) return { success: false, error: 'Asset not found' }
+    if (asset.organizationId !== dbUser.organizationId) {
+      return { success: false, error: 'Not authorized to delete this asset' }
+    }
+
+    await db.delete(assets).where(eq(assets.id, assetId))
+    revalidatePath('/dashboard/assets')
+    revalidatePath('/dashboard/tracks')
+    return { success: true }
+  } catch (error: unknown) {
     return { success: false, error: getErrorMessage(error) }
   }
 }

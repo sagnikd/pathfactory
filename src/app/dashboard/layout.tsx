@@ -23,8 +23,15 @@ export default async function DashboardLayout({
   const cookieStore = await cookies()
   const isImpersonating = isSuperAdmin && !!cookieStore.get(IMPERSONATE_COOKIE)?.value
 
-  // Ensure a DB user row exists
-  const [dbUser] = await db.select().from(users).where(eq(users.id, user.id))
+  // Ensure a DB user row exists (guard DB errors so runtime doesn't white-screen)
+  let dbUser: typeof users.$inferSelect | undefined
+  try {
+    const rows = await db.select().from(users).where(eq(users.id, user.id))
+    dbUser = rows[0]
+  } catch (error: unknown) {
+    console.error('Dashboard DB user lookup failed:', error)
+    redirect('/login?error=' + encodeURIComponent('Temporary database issue. Please try again.'))
+  }
 
   if (!dbUser) {
     if (isSuperAdmin) {
@@ -54,6 +61,13 @@ export default async function DashboardLayout({
             })
           } catch { /* user row already exists */ }
         }
+      }
+      try {
+        const rows = await db.select().from(users).where(eq(users.id, user.id))
+        dbUser = rows[0]
+      } catch (error: unknown) {
+        console.error('Dashboard super-admin auto-provision lookup failed:', error)
+        redirect('/login?error=' + encodeURIComponent('Temporary database issue. Please try again.'))
       }
     } else {
       // Regular user with no org — send them to sign up again (org not created)

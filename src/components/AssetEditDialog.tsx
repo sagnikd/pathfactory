@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, UploadCloud, X, FileText, Video, Link2, Image as ImageIcon } from 'lucide-react'
-import { updateAsset } from '@/app/dashboard/assets/actions'
+import { deleteAsset, updateAsset } from '@/app/dashboard/assets/actions'
 import { createClient } from '@/lib/supabase/client'
 
 type Asset = {
@@ -64,6 +64,7 @@ export function AssetEditDialog({
   const [thumbnailUrl, setThumbnailUrl] = useState(asset.thumbnailUrl ?? '')
   const [tagsText, setTagsText] = useState(extractTags(asset.metadataJson).join(', '))
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -125,6 +126,20 @@ export function AssetEditDialog({
       onClose()
     } else {
       setError(res.error || 'Failed to save')
+    }
+  }
+
+  async function handleDelete() {
+    const ok = window.confirm('Delete this asset? This will remove it from all tracks.')
+    if (!ok) return
+    setDeleting(true)
+    setError(null)
+    const res = await deleteAsset(asset.id)
+    setDeleting(false)
+    if (res.success) {
+      onClose()
+    } else {
+      setError(res.error || 'Failed to delete asset')
     }
   }
 
@@ -253,10 +268,19 @@ export function AssetEditDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={onClose} disabled={saving || uploading}>
+            <Button variant="outline" onClick={onClose} disabled={saving || uploading || deleting}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving || uploading || !title.trim()}>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={saving || uploading || deleting}
+            >
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
+            <Button onClick={handleSave} disabled={saving || uploading || deleting || !title.trim()}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save changes
             </Button>

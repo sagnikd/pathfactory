@@ -376,6 +376,7 @@ function PdfViewer({ asset, sessionId, onComplete }: any) {
   const pdfSrc = asset.fileUrl
     ? asset.fileUrl
     : `/api/pdf-proxy?url=${encodeURIComponent(asset.sourceUrl)}`
+  const downloadHref = asset.fileUrl || asset.sourceUrl || pdfSrc
 
   // After pages render, restore saved scroll position
   useEffect(() => {
@@ -456,12 +457,24 @@ function PdfViewer({ asset, sessionId, onComplete }: any) {
         <span className="text-sm text-muted-foreground">
           {numPages > 0 ? `${numPages} pages · ${scrollPct}% read` : 'Loading…'}
         </span>
-        <button
-          onClick={onComplete}
-          className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
-        >
-          Finish document
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={downloadHref}
+            download
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium"
+          >
+            Download PDF
+          </a>
+          <button
+            onClick={() => onComplete?.()}
+            disabled={!onComplete}
+            className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+          >
+            {onComplete ? 'Finish document' : 'Finish document (single layout)'}
+          </button>
+        </div>
       </div>
     </div>
   )

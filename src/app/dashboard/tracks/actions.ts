@@ -49,6 +49,10 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error'
 }
 
+function pageScreenshotUrl(url: string): string {
+  return `https://image.thum.io/get/width/1200/crop/720/noanimate/${url}`
+}
+
 function slugify(text: string) {
   return text
     .toLowerCase()
@@ -159,6 +163,7 @@ export async function bulkImportUrls(orgId: string, rawUrls: string) {
         thumbnailUrl = url
       } else if (/\.pdf(\?.*)?$/i.test(url)) {
         type = 'pdf'
+        thumbnailUrl = pageScreenshotUrl(url)
       } else {
         try {
           const response = await fetch(url, { headers: { 'User-Agent': 'PathFactory-Bot/1.0' } })
@@ -172,6 +177,9 @@ export async function bulkImportUrls(orgId: string, rawUrls: string) {
             description = $('meta[property="og:description"]').attr('content')?.substring(0, 300) || null
           }
         } catch {}
+        if (!thumbnailUrl) {
+          thumbnailUrl = pageScreenshotUrl(url)
+        }
       }
 
       const [asset] = await db.insert(assets).values({

@@ -82,7 +82,7 @@ export default function TrackViewer({
           <div className="font-bold">{org.name} — {track.title}</div>
           {typeof returningVisitorName === 'string' && returningVisitorName.trim() && (
             <p className="text-xs text-muted-foreground">
-              Welcome back, {returningVisitorName}
+              Welcome {returningVisitorName} from {org.name}
             </p>
           )}
         </div>
@@ -117,7 +117,11 @@ export default function TrackViewer({
                     <div className="w-16 h-12 rounded overflow-hidden bg-muted shrink-0 border">
                       {thumb ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={thumb} alt={asset.title} className="w-full h-full object-cover" />
+                        <img
+                          src={thumb}
+                          alt={asset.title}
+                          className={`w-full h-full object-cover ${asset.type === 'pdf' ? 'object-left-top' : ''}`}
+                        />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">No image</div>
                       )}
@@ -157,7 +161,7 @@ export default function TrackViewer({
                 key={currentAsset.id}
                 asset={currentAsset}
                 sessionId={sessionId}
-                onComplete={undefined}
+                onComplete={handleNext}
               />
             </GateOverlay>
           </div>

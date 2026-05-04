@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { FileText, LayoutDashboard, Settings, Layers, BarChart2, Users, ShieldCheck, LogOut } from 'lucide-react'
+import { FileText, LayoutDashboard, Settings, Layers, BarChart2, Users, ShieldCheck, LogOut, PanelsTopLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { stopImpersonation } from '@/app/dashboard/admin/actions'
@@ -10,6 +10,7 @@ import { stopImpersonation } from '@/app/dashboard/admin/actions'
 const navItems = [
   { href: '/dashboard/assets', label: 'Asset Library', icon: FileText },
   { href: '/dashboard/tracks', label: 'Tracks', icon: LayoutDashboard },
+  { href: '/dashboard/experiences', label: 'Experiences', icon: PanelsTopLeft },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart2 },
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
