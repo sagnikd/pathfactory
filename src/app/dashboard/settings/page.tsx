@@ -7,9 +7,27 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Settings, Globe, Webhook, Trash2 } from 'lucide-react'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
+import { EditableSettingsSection } from '@/components/EditableSettingsSection'
 
 type ThemeWithFavicon = {
   faviconUrl?: string | null
+  leadScoring?: {
+    uniqueAssetViewPoints?: number
+    dwellTickPoints?: number
+    deepScrollPoints?: number
+    videoPlayPoints?: number
+    videoCompletePoints?: number
+    returnSessionPoints?: number
+  } | null
+}
+
+const DEFAULT_LEAD_SCORING = {
+  uniqueAssetViewPoints: 5,
+  dwellTickPoints: 2,
+  deepScrollPoints: 3,
+  videoPlayPoints: 5,
+  videoCompletePoints: 10,
+  returnSessionPoints: 20,
 }
 
 async function updateOrgName(formData: FormData) {
@@ -64,6 +82,43 @@ async function removeWebhook(formData: FormData) {
   revalidatePath('/dashboard/settings')
 }
 
+async function updateLeadScoring(formData: FormData) {
+  'use server'
+  const orgId = formData.get('orgId') as string
+  if (!orgId) return
+  const asNum = (key: string, fallback: number) => {
+    const raw = String(formData.get(key) ?? '').trim()
+    const n = Number(raw)
+    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : fallback
+  }
+
+  const leadScoring = {
+    uniqueAssetViewPoints: asNum('uniqueAssetViewPoints', DEFAULT_LEAD_SCORING.uniqueAssetViewPoints),
+    dwellTickPoints: asNum('dwellTickPoints', DEFAULT_LEAD_SCORING.dwellTickPoints),
+    deepScrollPoints: asNum('deepScrollPoints', DEFAULT_LEAD_SCORING.deepScrollPoints),
+    videoPlayPoints: asNum('videoPlayPoints', DEFAULT_LEAD_SCORING.videoPlayPoints),
+    videoCompletePoints: asNum('videoCompletePoints', DEFAULT_LEAD_SCORING.videoCompletePoints),
+    returnSessionPoints: asNum('returnSessionPoints', DEFAULT_LEAD_SCORING.returnSessionPoints),
+  }
+
+  const orgTracks = await db.select({ id: tracks.id, themeJson: tracks.themeJson })
+    .from(tracks)
+    .where(eq(tracks.organizationId, orgId))
+
+  for (const track of orgTracks) {
+    const existingTheme = (track.themeJson as Record<string, unknown> | null) ?? {}
+    await db.update(tracks).set({
+      themeJson: {
+        ...existingTheme,
+        leadScoring,
+      },
+      updatedAt: new Date(),
+    }).where(eq(tracks.id, track.id))
+  }
+
+  revalidatePath('/dashboard/settings')
+}
+
 export default async function SettingsPage() {
   const { dbUser } = await getDashboardAuthContext()
 
@@ -77,6 +132,10 @@ export default async function SettingsPage() {
     orgTracks
       .map((t) => ((t.themeJson as ThemeWithFavicon | null)?.faviconUrl ?? '').trim())
       .find((url) => url.length > 0) ?? ''
+  const leadScoring =
+    orgTracks
+      .map((t) => (t.themeJson as ThemeWithFavicon | null)?.leadScoring ?? null)
+      .find((v) => v && typeof v === 'object') ?? DEFAULT_LEAD_SCORING
 
   return (
     <div className="space-y-8 max-w-2xl">
@@ -86,16 +145,16 @@ export default async function SettingsPage() {
       </div>
 
       {/* Organization */}
-      <section className="rounded-xl border bg-card p-6 space-y-5">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
-            <Globe className="w-4 h-4 text-primary" />
+      <EditableSettingsSection
+        title="Organization"
+        description="Your workspace details"
+        preview={
+          <div className="space-y-1">
+            <div><span className="text-foreground font-medium">Name:</span> {org.name}</div>
+            <div><span className="text-foreground font-medium">Slug:</span> {org.slug}</div>
           </div>
-          <div>
-            <h2 className="font-semibold">Organization</h2>
-            <p className="text-xs text-muted-foreground">Your workspace details</p>
-          </div>
-        </div>
+        }
+      >
         <form action={updateOrgName} className="space-y-4">
           <input type="hidden" name="orgId" value={org.id} />
           <div className="space-y-1.5">
@@ -110,8 +169,14 @@ export default async function SettingsPage() {
           </div>
           <Button type="submit" size="sm">Save name</Button>
         </form>
+      </EditableSettingsSection>
 
-        <form action={updateOrgBranding} className="space-y-4 pt-2 border-t">
+      <EditableSettingsSection
+        title="Default Favicon URL"
+        description="Used for public track and experience pages"
+        preview={<span>{defaultFavicon || 'Not set'}</span>}
+      >
+        <form action={updateOrgBranding} className="space-y-4">
           <input type="hidden" name="orgId" value={org.id} />
           <div className="space-y-1.5">
             <Label htmlFor="org-favicon-url">Default favicon URL</Label>
@@ -123,13 +188,10 @@ export default async function SettingsPage() {
               placeholder="https://example.com/favicon.ico"
               className="max-w-xl"
             />
-            <p className="text-xs text-muted-foreground">
-              This favicon will be used for public track and experience pages.
-            </p>
           </div>
           <Button type="submit" size="sm">Save branding</Button>
         </form>
-      </section>
+      </EditableSettingsSection>
 
       {/* Account */}
       <section className="rounded-xl border bg-card p-6 space-y-4">
@@ -199,6 +261,53 @@ export default async function SettingsPage() {
           <Button type="submit" size="sm" className="shrink-0">Add webhook</Button>
         </form>
       </section>
+
+      <EditableSettingsSection
+        title="Lead Scoring"
+        description="Configure points added for each engagement signal"
+        preview={
+          <div className="space-y-1">
+            <div>Unique view: {leadScoring.uniqueAssetViewPoints ?? DEFAULT_LEAD_SCORING.uniqueAssetViewPoints}</div>
+            <div>Dwell: {leadScoring.dwellTickPoints ?? DEFAULT_LEAD_SCORING.dwellTickPoints}</div>
+            <div>Deep scroll: {leadScoring.deepScrollPoints ?? DEFAULT_LEAD_SCORING.deepScrollPoints}</div>
+            <div>Video play: {leadScoring.videoPlayPoints ?? DEFAULT_LEAD_SCORING.videoPlayPoints}</div>
+            <div>Video complete: {leadScoring.videoCompletePoints ?? DEFAULT_LEAD_SCORING.videoCompletePoints}</div>
+            <div>Return session: {leadScoring.returnSessionPoints ?? DEFAULT_LEAD_SCORING.returnSessionPoints}</div>
+          </div>
+        }
+      >
+        <form action={updateLeadScoring} className="grid gap-3 sm:grid-cols-2">
+          <input type="hidden" name="orgId" value={org.id} />
+          <div className="space-y-1.5">
+            <Label htmlFor="ls-asset-view">Unique asset view points</Label>
+            <Input id="ls-asset-view" name="uniqueAssetViewPoints" type="number" min={0} defaultValue={leadScoring.uniqueAssetViewPoints ?? DEFAULT_LEAD_SCORING.uniqueAssetViewPoints} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ls-dwell">Dwell tick points</Label>
+            <Input id="ls-dwell" name="dwellTickPoints" type="number" min={0} defaultValue={leadScoring.dwellTickPoints ?? DEFAULT_LEAD_SCORING.dwellTickPoints} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ls-scroll">Deep scroll points</Label>
+            <Input id="ls-scroll" name="deepScrollPoints" type="number" min={0} defaultValue={leadScoring.deepScrollPoints ?? DEFAULT_LEAD_SCORING.deepScrollPoints} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ls-play">Video play points</Label>
+            <Input id="ls-play" name="videoPlayPoints" type="number" min={0} defaultValue={leadScoring.videoPlayPoints ?? DEFAULT_LEAD_SCORING.videoPlayPoints} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ls-complete">Video complete points</Label>
+            <Input id="ls-complete" name="videoCompletePoints" type="number" min={0} defaultValue={leadScoring.videoCompletePoints ?? DEFAULT_LEAD_SCORING.videoCompletePoints} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ls-return">Return session points</Label>
+            <Input id="ls-return" name="returnSessionPoints" type="number" min={0} defaultValue={leadScoring.returnSessionPoints ?? DEFAULT_LEAD_SCORING.returnSessionPoints} />
+          </div>
+          <div className="sm:col-span-2">
+            <Button type="submit" size="sm">Save lead scoring</Button>
+          </div>
+        </form>
+      </EditableSettingsSection>
+
     </div>
   )
 }

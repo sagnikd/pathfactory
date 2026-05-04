@@ -159,12 +159,12 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
                         <div className="absolute right-0 top-full mt-1.5 z-10 w-52 rounded-lg border bg-popover p-3 shadow-lg text-xs hidden group-hover:block">
                           <p className="font-semibold text-sm mb-2">Score breakdown</p>
                           {[
-                            { label: 'Assets viewed',      value: scoreData.breadth,     hint: '×5 per asset' },
-                            { label: 'Time on page',       value: scoreData.dwell,       hint: '×2 per 10 s' },
-                            { label: 'Deep reads',         value: scoreData.depth,       hint: '×3 per scroll milestone' },
-                            { label: 'Videos started',     value: scoreData.videoPlay,   hint: '×5 per play' },
-                            { label: 'Videos completed',   value: scoreData.videoFinish, hint: '×10 per completion' },
-                            { label: 'Return visits',      value: scoreData.returnVisit, hint: '×20 per extra session' },
+                            { label: 'Assets viewed',      value: scoreData.breadth },
+                            { label: 'Time on page',       value: scoreData.dwell },
+                            { label: 'Deep reads',         value: scoreData.depth },
+                            { label: 'Videos started',     value: scoreData.videoPlay },
+                            { label: 'Videos completed',   value: scoreData.videoFinish },
+                            { label: 'Return visits',      value: scoreData.returnVisit },
                           ].map(row => (
                             <div key={row.label} className="flex items-center justify-between gap-2 py-0.5">
                               <span className="text-muted-foreground">{row.label}</span>

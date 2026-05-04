@@ -158,6 +158,19 @@ export const webhooks = pgTable("webhooks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const leadScoringConfigs = pgTable("lead_scoring_configs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull().unique(),
+  uniqueAssetViewPoints: integer("unique_asset_view_points").default(5).notNull(),
+  dwellTickPoints: integer("dwell_tick_points").default(2).notNull(),
+  deepScrollPoints: integer("deep_scroll_points").default(3).notNull(),
+  videoPlayPoints: integer("video_play_points").default(5).notNull(),
+  videoCompletePoints: integer("video_complete_points").default(10).notNull(),
+  returnSessionPoints: integer("return_session_points").default(20).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const abmAccounts = pgTable("abm_accounts", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
