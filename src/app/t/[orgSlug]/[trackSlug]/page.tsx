@@ -145,11 +145,11 @@ export default async function PublicTrackPage({
     <div className="w-full min-h-screen bg-background text-foreground" style={{
       // Apply theme variables if any (e.g. from track.themeJson)
     }}>
-      <TrackViewer 
-        track={track} 
+      <TrackViewer
+        track={track}
         assets={sortedAssets as any[]}
-        org={org} 
-        sessionId={sessionId} 
+        org={{ id: org.id, name: org.name }}
+        sessionId={sessionId}
         visitorId={visitorId}
         returningVisitorName={returningVisitorName}
         isKnownVisitor={isKnownVisitor}

@@ -91,7 +91,7 @@ export default async function DashboardLayout({
       <div className="flex flex-col flex-1 sm:pl-60">
         {/* Top header with notification bell */}
         <header className="sticky top-0 z-20 h-14 flex items-center justify-end px-6 border-b bg-background/95 backdrop-blur shrink-0">
-          <NotificationBell orgTrackIds={orgTrackIds} trackTitles={trackTitles} />
+          <NotificationBell orgId={dbUser.organizationId} orgTrackIds={orgTrackIds} trackTitles={trackTitles} />
         </header>
         <main className="flex-1 p-6 md:p-8">
           {children}

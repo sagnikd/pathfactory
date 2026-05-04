@@ -5,6 +5,7 @@ import { initializeTracking, trackEvent } from '@/lib/tracking'
 import { Progress } from '@/components/ui/progress'
 import dynamic from 'next/dynamic'
 import { GateOverlay, type GateConfig } from '@/components/GateOverlay'
+import { createClient } from '@/lib/supabase/client'
 
 const AssetViewer = dynamic(() => import('./AssetViewer').then(m => m.AssetViewer), { ssr: false })
 
@@ -19,7 +20,7 @@ type TrackViewerProps = {
     fileUrl?: string | null
     metadataJson?: unknown
   }>
-  org: { name: string }
+  org: { id: string; name: string }
   sessionId: string | null
   visitorId: string | null
   returningVisitorName?: string | null
@@ -52,17 +53,46 @@ export default function TrackViewer({
     initializeTracking().then(() => setTrackingInitialized(true))
   }, [])
 
-  // Back-fill geo data for this session if the server-side lookup missed it
-  // (e.g. ipapi.co rate-limit, missing Netlify header on first render).
-  // Fire-and-forget — never blocks the UI.
+  // 1. Back-fill geo for the session (best-effort).
+  // 2. Broadcast a visitor-alert so the dashboard notification bell fires
+  //    immediately — uses Supabase broadcast (no Realtime table config needed).
   useEffect(() => {
-    if (!sessionId) return
-    fetch('/api/session-geo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
-    }).catch(() => { /* silent — geo is best-effort */ })
-  }, [sessionId])
+    if (!sessionId || !org.id) return
+
+    const orgId = org.id
+    const trackTitle = track.title
+    const trackId = track.id
+
+    ;(async () => {
+      try {
+        const geoRes = await fetch('/api/session-geo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+        })
+        const geo = geoRes.ok ? await geoRes.json() : {}
+
+        // Broadcast to the org's notification channel so the dashboard bell fires
+        const supabase = createClient()
+        await supabase.channel(`visitor-alerts:${orgId}`)
+          .send({
+            type: 'broadcast',
+            event: 'new-session',
+            payload: {
+              id:         sessionId,
+              trackId,
+              trackTitle,
+              company:    geo.company    ?? null,
+              country:    geo.country    ?? null,
+              city:       geo.city       ?? null,
+              startedAt:  new Date().toISOString(),
+            },
+          })
+      } catch {
+        // Best-effort — never block the visitor
+      }
+    })()
+  }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (trackingInitialized && currentAsset && sessionId) {

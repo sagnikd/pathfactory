@@ -23,9 +23,11 @@ function timeAgo(iso: string): string {
 }
 
 export function NotificationBell({
+  orgId,
   orgTrackIds,
   trackTitles,
 }: {
+  orgId: string
   orgTrackIds: string[]
   trackTitles: Record<string, string>
 }) {
@@ -34,47 +36,34 @@ export function NotificationBell({
   const [unread,   setUnread]   = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // ── Supabase Realtime subscription ────────────────────────────────────────
+  // ── Supabase Realtime broadcast subscription ───────────────────────────────
+  // Uses broadcast (not postgres_changes) so no Realtime table config or
+  // RLS SELECT access on sessions is required.
+  // TrackViewer broadcasts to this channel when a visitor session starts.
   useEffect(() => {
-    if (orgTrackIds.length === 0) return
+    if (!orgId) return
     const supabase = createClient()
 
     const channel = supabase
-      .channel('visitor-alerts')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'sessions' },
-        (payload) => {
-          const row = payload.new as {
-            id: string
-            track_id: string
-            started_at: string
-            device_json?: { company?: string; country?: string; city?: string; ip?: string } | null
-          }
-
-          // Only surface sessions belonging to this org's tracks
-          if (!orgTrackIds.includes(row.track_id)) return
-
-          const device = row.device_json ?? {}
-          const alert: VisitorAlert = {
-            id:         row.id,
-            trackId:    row.track_id,
-            trackTitle: trackTitles[row.track_id] ?? 'Unknown Track',
-            company:    device.company  ?? null,
-            country:    device.country  ?? null,
-            city:       device.city     ?? null,
-            startedAt:  row.started_at,
-            read:       false,
-          }
-
-          setAlerts(prev => [alert, ...prev].slice(0, 30))
-          setUnread(n => n + 1)
+      .channel(`visitor-alerts:${orgId}`)
+      .on('broadcast', { event: 'new-session' }, ({ payload }) => {
+        const alert: VisitorAlert = {
+          id:         payload.id         ?? crypto.randomUUID(),
+          trackId:    payload.trackId    ?? '',
+          trackTitle: payload.trackTitle ?? trackTitles[payload.trackId] ?? 'Unknown Track',
+          company:    payload.company    ?? null,
+          country:    payload.country    ?? null,
+          city:       payload.city       ?? null,
+          startedAt:  payload.startedAt  ?? new Date().toISOString(),
+          read:       false,
         }
-      )
+        setAlerts(prev => [alert, ...prev].slice(0, 30))
+        setUnread(n => n + 1)
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [orgTrackIds, trackTitles])
+  }, [orgId, trackTitles])
 
   // ── Close on outside click ─────────────────────────────────────────────────
   useEffect(() => {
