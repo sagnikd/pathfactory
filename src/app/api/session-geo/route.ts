@@ -7,18 +7,21 @@ import { lookupIp } from '@/lib/ipLookup'
 
 /**
  * POST /api/session-geo
- * Body: { sessionId: string }
- *
- * Called client-side on track load. Resolves the visitor's real IP
- * (using Netlify / proxy headers) and back-fills the session's deviceJson
- * with country/city/company if they are currently missing.
- *
- * This is a graceful fallback for cases where the server-side lookup in
- * the track page failed (e.g. ipapi.co rate-limit, cold-start, etc.).
+ * Body: {
+ *   sessionId: string
+ *   // Optional: client-resolved geo (ipapi.co/json called from the browser).
+ *   // When provided, we skip the server-side lookup entirely — this avoids
+ *   // the rate-limit problem where all Netlify-origin calls share one IP quota.
+ *   country?: string | null
+ *   city?:    string | null
+ *   company?: string | null
+ * }
  */
 export async function POST(req: Request) {
   try {
-    const { sessionId } = await req.json()
+    const body = await req.json()
+    const { sessionId, country: bodyCountry, city: bodyCity, company: bodyCompany } = body
+
     if (!sessionId || typeof sessionId !== 'string') {
       return NextResponse.json({ error: 'sessionId required' }, { status: 400 })
     }
@@ -32,33 +35,50 @@ export async function POST(req: Request) {
 
     // Already have geo — nothing to do
     if (existing.country || existing.city) {
-      return NextResponse.json({ ok: true, source: 'existing', country: existing.country, city: existing.city })
+      return NextResponse.json({
+        ok: true, source: 'existing',
+        country: existing.country, city: existing.city, company: existing.company,
+      })
     }
 
-    // Extract real client IP from headers (Netlify first, then standard proxies)
-    const reqHeaders = await headers()
-    const rawIp =
-      reqHeaders.get('x-nf-client-connection-ip') ??         // Netlify edge
-      reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      reqHeaders.get('x-real-ip') ??
-      null
+    let country: string | null = null
+    let city:    string | null = null
+    let company: string | null = null
+    let source = 'server-lookup'
 
-    const ipInfo = await lookupIp(rawIp)
+    // Prefer client-resolved geo (visitor's own IP → no shared quota)
+    if (bodyCountry || bodyCity) {
+      country = bodyCountry ?? null
+      city    = bodyCity    ?? null
+      company = bodyCompany ?? null
+      source  = 'client'
+    } else {
+      // Fallback: resolve from server-side request headers
+      const reqHeaders = await headers()
+      const rawIp =
+        reqHeaders.get('x-nf-client-connection-ip') ??
+        reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+        reqHeaders.get('x-real-ip') ??
+        null
 
-    // Only update if we got something useful
-    if (ipInfo.country || ipInfo.city || ipInfo.company) {
+      const ipInfo = await lookupIp(rawIp)
+      country = ipInfo.country
+      city    = ipInfo.city
+      company = ipInfo.company
+    }
+
+    if (country || city || company) {
       const merged = {
         ...existing,
-        ip:      ipInfo.ip      ?? existing.ip      ?? null,
-        company: ipInfo.company ?? existing.company ?? null,
-        country: ipInfo.country ?? existing.country ?? null,
-        city:    ipInfo.city    ?? existing.city    ?? null,
+        company: company ?? existing.company ?? null,
+        country: country ?? existing.country ?? null,
+        city:    city    ?? existing.city    ?? null,
       }
       await db.update(sessions).set({ deviceJson: merged }).where(eq(sessions.id, sessionId))
-      return NextResponse.json({ ok: true, source: 'lookup', country: ipInfo.country, city: ipInfo.city })
+      return NextResponse.json({ ok: true, source, country, city, company })
     }
 
-    return NextResponse.json({ ok: false, reason: 'no geo data', ip: rawIp })
+    return NextResponse.json({ ok: false, reason: 'no geo data' })
   } catch (err) {
     console.error('[session-geo]', err)
     return NextResponse.json({ error: 'internal error' }, { status: 500 })

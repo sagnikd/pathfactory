@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Sparkles } from 'lucide-react'
+import { clientGeoLookup } from '@/lib/geoLookup'
 
 export type LeadField = {
   name: string
@@ -108,26 +109,13 @@ function isTelecomOrISP(org: string): boolean {
 }
 
 async function fetchIpData(): Promise<Partial<IpData>> {
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 4000)
-    const res = await fetch('https://ipapi.co/json/', { signal: controller.signal })
-    clearTimeout(timeout)
-    if (!res.ok) return {}
-    const d = await res.json()
-
-    // Strip the ASN prefix ("AS12345 ") that ipapi.co prepends
-    const rawOrg    = d.org ? String(d.org).replace(/^AS\d+\s+/i, '').trim() : ''
-    // Only use the org name if it looks like a real company, not a telecom/ISP
-    const company   = rawOrg && !isTelecomOrISP(rawOrg) ? rawOrg : ''
-
-    return {
-      company,
-      country: d.country_name ?? '',
-      city:    d.city ?? '',
-    }
-  } catch {
-    return {}
+  const geo = await clientGeoLookup()
+  // Apply ISP filter on company (shared util doesn't filter; gate form should not show ISP names)
+  const company = geo.company && !isTelecomOrISP(geo.company) ? geo.company : ''
+  return {
+    company,
+    country: geo.country ?? '',
+    city:    geo.city    ?? '',
   }
 }
 

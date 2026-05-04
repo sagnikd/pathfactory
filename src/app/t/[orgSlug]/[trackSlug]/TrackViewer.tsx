@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress'
 import dynamic from 'next/dynamic'
 import { GateOverlay, type GateConfig } from '@/components/GateOverlay'
 import { createClient } from '@/lib/supabase/client'
+import { clientGeoLookup } from '@/lib/geoLookup'
 
 const AssetViewer = dynamic(() => import('./AssetViewer').then(m => m.AssetViewer), { ssr: false })
 
@@ -58,24 +59,32 @@ export default function TrackViewer({
     initializeTracking().then(() => setTrackingInitialized(true))
   }, [])
 
-  // 1. Back-fill geo for the session (best-effort).
-  // 2. Broadcast a visitor-alert so the dashboard notification bell fires
-  //    immediately — uses Supabase broadcast (no Realtime table config needed).
+  // 1. Client-side geo lookup (visitor's own IP — no shared server rate-limit).
+  // 2. Store geo in session.deviceJson via /api/session-geo.
+  // 3. Broadcast visitor-alert to dashboard notification bell.
   useEffect(() => {
     if (!sessionId || !org.id) return
 
-    const orgId = org.id
+    const orgId    = org.id
     const trackTitle = track.title
-    const trackId = track.id
+    const trackId  = track.id
 
     ;(async () => {
       try {
-        const geoRes = await fetch('/api/session-geo', {
+        // Resolve geo client-side first (visitor's IP, not Netlify's)
+        const geo = await clientGeoLookup()
+
+        // Persist geo to DB (passes resolved values so server skips its own lookup)
+        await fetch('/api/session-geo', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId }),
+          body: JSON.stringify({
+            sessionId,
+            country: geo.country,
+            city:    geo.city,
+            company: geo.company,
+          }),
         })
-        const geo = geoRes.ok ? await geoRes.json() : {}
 
         // Broadcast to the org's notification channel so the dashboard bell fires
         const supabase = createClient()
@@ -87,9 +96,9 @@ export default function TrackViewer({
               id:         sessionId,
               trackId,
               trackTitle,
-              company:    geo.company    ?? null,
-              country:    geo.country    ?? null,
-              city:       geo.city       ?? null,
+              company:    geo.company ?? null,
+              country:    geo.country ?? null,
+              city:       geo.city    ?? null,
               startedAt:  new Date().toISOString(),
             },
           })
