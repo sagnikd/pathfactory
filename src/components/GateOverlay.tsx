@@ -109,11 +109,10 @@ function isTelecomOrISP(org: string): boolean {
 }
 
 async function fetchIpData(): Promise<Partial<IpData>> {
+  // clientGeoLookup already filters telecom/ISP companies to null
   const geo = await clientGeoLookup()
-  // Apply ISP filter on company (shared util doesn't filter; gate form should not show ISP names)
-  const company = geo.company && !isTelecomOrISP(geo.company) ? geo.company : ''
   return {
-    company,
+    company: geo.company ?? '',
     country: geo.country ?? '',
     city:    geo.city    ?? '',
   }
