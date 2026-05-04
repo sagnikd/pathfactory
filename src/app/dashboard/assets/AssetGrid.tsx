@@ -11,9 +11,14 @@ type Asset = {
   thumbnailUrl: string | null
   sourceUrl: string | null
   fileUrl: string | null
-  metadataJson?: {
-    tags?: string[]
-  } | null
+  metadataJson?: unknown
+}
+
+function extractTags(metadataJson: unknown): string[] {
+  if (!metadataJson || typeof metadataJson !== 'object') return []
+  const maybeTags = (metadataJson as { tags?: unknown }).tags
+  if (!Array.isArray(maybeTags)) return []
+  return maybeTags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
 }
 
 function TypeIcon({ type }: { type: Asset['type'] }) {
@@ -30,6 +35,9 @@ export function AssetGrid({ assets }: { assets: Asset[] }) {
     <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {assets.map((asset) => (
+          (() => {
+            const tags = extractTags(asset.metadataJson)
+            return (
           <button
             key={asset.id}
             onClick={() => setEditing(asset)}
@@ -61,9 +69,9 @@ export function AssetGrid({ assets }: { assets: Asset[] }) {
                 <p className="text-sm font-medium leading-snug line-clamp-2">{asset.title}</p>
                 <TypeIcon type={asset.type} />
               </div>
-              {asset.metadataJson?.tags && asset.metadataJson.tags.length > 0 && (
+              {tags.length > 0 && (
                 <div className="flex flex-wrap gap-1 pt-0.5">
-                  {asset.metadataJson.tags.slice(0, 3).map((tag) => (
+                  {tags.slice(0, 3).map((tag) => (
                     <span key={tag} className="inline-flex items-center rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                       {tag}
                     </span>
@@ -75,6 +83,8 @@ export function AssetGrid({ assets }: { assets: Asset[] }) {
               </p>
             </div>
           </button>
+            )
+          })()
         ))}
       </div>
 
