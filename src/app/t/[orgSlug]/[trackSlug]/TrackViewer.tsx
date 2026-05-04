@@ -17,9 +17,7 @@ type TrackViewerProps = {
     thumbnailUrl?: string | null
     sourceUrl?: string | null
     fileUrl?: string | null
-    metadataJson?: {
-      tags?: string[]
-    } | null
+    metadataJson?: unknown
   }>
   org: { name: string }
   sessionId: string | null
@@ -37,6 +35,13 @@ export default function TrackViewer({
   returningVisitorName,
   isKnownVisitor = false,
 }: TrackViewerProps) {
+  function extractTags(metadataJson: unknown): string[] {
+    if (!metadataJson || typeof metadataJson !== 'object') return []
+    const maybeTags = (metadataJson as { tags?: unknown }).tags
+    if (!Array.isArray(maybeTags)) return []
+    return maybeTags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+  }
+
   const layout: 'binge' | 'hub' | 'single' = track.layout ?? 'binge'
   const [currentAssetIndex, setCurrentAssetIndex] = useState(0)
   const effectiveIndex = layout === 'single' ? 0 : currentAssetIndex
@@ -95,7 +100,7 @@ export default function TrackViewer({
           <aside className="w-80 border-r bg-background overflow-y-auto p-3 space-y-2">
             {assets.map((asset, index) => {
               const active = index === effectiveIndex
-              const tags = (asset.metadataJson?.tags ?? []).filter(Boolean)
+              const tags = extractTags(asset.metadataJson)
               const fallbackTag = asset.type ? asset.type.toUpperCase() : 'ASSET'
               const thumb = asset.thumbnailUrl || asset.fileUrl || asset.sourceUrl || null
               return (
