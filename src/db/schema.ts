@@ -18,6 +18,8 @@ export const assetTypeEnum = pgEnum("asset_type", ["pdf", "video", "article", "i
 export const layoutEnum = pgEnum("layout", ["binge", "hub", "single"]);
 export const trackStatusEnum = pgEnum("track_status", ["draft", "published"]);
 export const formPositionEnum = pgEnum("form_position", ["gate", "after_asset_n", "exit_intent"]);
+export const abmMatchSourceEnum = pgEnum("abm_match_source", ["email_domain", "reverse_ip", "fuzzy"]);
+export const abmConfidenceEnum = pgEnum("abm_confidence", ["high", "medium", "low"]);
 export const eventTypeEnum = pgEnum("event_type", [
   "view",
   "scroll_25",
@@ -154,4 +156,50 @@ export const webhooks = pgTable("webhooks", {
   secret: text("secret").notNull(),
   events: jsonb("events").notNull(), // array of event names to listen to
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const abmAccounts = pgTable("abm_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  accountName: text("account_name").notNull(),
+  priority: text("priority").default("medium").notNull(),
+  ownerEmail: text("owner_email"),
+  notes: text("notes"),
+  status: text("status").default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const abmAccountDomains = pgTable("abm_account_domains", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  abmAccountId: uuid("abm_account_id").references(() => abmAccounts.id, { onDelete: "cascade" }).notNull(),
+  domain: text("domain").notNull(),
+  isPrimary: boolean("is_primary").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const abmMatches = pgTable("abm_matches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  visitorId: uuid("visitor_id").references(() => visitors.id, { onDelete: "cascade" }).notNull(),
+  sessionId: uuid("session_id").references(() => sessions.id, { onDelete: "set null" }),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  abmAccountId: uuid("abm_account_id").references(() => abmAccounts.id, { onDelete: "cascade" }).notNull(),
+  matchSource: abmMatchSourceEnum("match_source").notNull(),
+  confidence: abmConfidenceEnum("confidence").notNull(),
+  matchedValue: text("matched_value").notNull(),
+  payloadJson: jsonb("payload_json"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const abmAlerts = pgTable("abm_alerts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  abmAccountId: uuid("abm_account_id").references(() => abmAccounts.id, { onDelete: "cascade" }).notNull(),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  visitorId: uuid("visitor_id").references(() => visitors.id, { onDelete: "set null" }),
+  triggerType: text("trigger_type").notNull(),
+  recipientsJson: jsonb("recipients_json").notNull(),
+  payloadJson: jsonb("payload_json"),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
 });

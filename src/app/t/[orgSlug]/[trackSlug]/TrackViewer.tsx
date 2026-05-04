@@ -77,16 +77,16 @@ export default function TrackViewer({
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <header className="flex h-14 items-center justify-between px-4 border-b shrink-0 bg-background/95 backdrop-blur">
-        <div>
-          <div className="font-bold">{org.name} — {track.title}</div>
+      <header className="flex min-h-14 items-center justify-between gap-3 px-3 sm:px-4 py-2 border-b shrink-0 bg-background/95 backdrop-blur">
+        <div className="min-w-0">
+          <div className="font-bold text-sm sm:text-base truncate">{org.name} — {track.title}</div>
           {typeof returningVisitorName === 'string' && returningVisitorName.trim() && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
               Welcome {returningVisitorName} from {org.name}
             </p>
           )}
         </div>
-        <div className="text-sm text-muted-foreground">
+        <div className="text-xs sm:text-sm text-muted-foreground shrink-0">
           {effectiveIndex + 1} / {assets.length}
         </div>
       </header>
@@ -96,8 +96,8 @@ export default function TrackViewer({
 
       {/* Main content */}
       {layout === 'hub' ? (
-        <main className="flex-1 overflow-hidden bg-muted/20 flex">
-          <aside className="w-80 border-r bg-background overflow-y-auto p-3 space-y-2">
+        <main className="flex-1 overflow-hidden bg-muted/20 flex flex-col lg:flex-row">
+          <aside className="w-full lg:w-80 lg:border-r bg-background overflow-y-auto p-2 sm:p-3 space-y-2 max-h-56 lg:max-h-none border-b lg:border-b-0">
             {assets.map((asset, index) => {
               const active = index === effectiveIndex
               const tags = extractTags(asset.metadataJson)
@@ -186,18 +186,18 @@ export default function TrackViewer({
 
       {/* Navigation */}
       {layout === 'binge' && (
-        <div className="flex h-14 items-center justify-between px-4 border-t shrink-0 bg-background">
+        <div className="grid grid-cols-2 gap-2 p-2 sm:p-3 border-t shrink-0 bg-background">
           <button
             onClick={handlePrevious}
             disabled={currentAssetIndex === 0}
-            className="px-4 py-2 text-sm font-medium bg-primary/85 text-primary-foreground rounded-md hover:bg-primary disabled:opacity-50"
+            className="w-full px-3 py-2.5 text-sm font-medium bg-primary/85 text-primary-foreground rounded-md hover:bg-primary disabled:opacity-50"
           >
             Previous
           </button>
           <button
             onClick={handleNext}
             disabled={currentAssetIndex === assets.length - 1}
-            className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-md disabled:opacity-50"
+            className="w-full px-3 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-md disabled:opacity-50"
           >
             Next Asset
           </button>

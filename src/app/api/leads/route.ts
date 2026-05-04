@@ -3,6 +3,7 @@ import { db } from '@/db'
 import { leads, visitors } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { computeLeadScores } from '@/lib/leadScore'
+import { processAbmLeadMatch } from '@/lib/abm'
 
 export async function POST(req: Request) {
   try {
@@ -22,17 +23,25 @@ export async function POST(req: Request) {
     const scoreMap = await computeLeadScores([visitorId])
     const score    = scoreMap[visitorId]?.total ?? 0
 
-    await db.insert(leads).values({
+    const [lead] = await db.insert(leads).values({
       visitorId,
       email,
       formResponsesJson: fields,
       score,
-    })
+    }).returning({ id: leads.id })
 
     // Persist captured email on visitor record
     await db.update(visitors)
       .set({ capturedEmail: email })
       .where(eq(visitors.id, visitorId))
+
+    await processAbmLeadMatch({
+      trackId: typeof trackId === 'string' ? trackId : null,
+      visitorId,
+      leadId: lead.id,
+      email,
+      formFields: (fields as Record<string, unknown>) ?? {},
+    })
 
     return NextResponse.json({ success: true })
   } catch (err: any) {

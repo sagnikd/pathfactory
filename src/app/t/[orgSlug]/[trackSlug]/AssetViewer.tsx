@@ -127,17 +127,17 @@ export function AssetViewer({ asset, sessionId, onComplete }: any) {
 
       {showCountdown && (
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-6">
-          <p className="text-2xl font-bold">Up next in {countdown}…</p>
-          <div className="flex gap-3">
+          <p className="text-xl sm:text-2xl font-bold text-center px-4">Up next in {countdown}…</p>
+          <div className="flex flex-col sm:flex-row w-full max-w-xs sm:max-w-none sm:w-auto gap-3 px-4">
             <button
               onClick={() => { setShowCountdown(false); onComplete() }}
-              className="px-5 py-2 bg-primary text-primary-foreground rounded-lg font-medium text-sm"
+              className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm"
             >
               Skip wait
             </button>
             <button
               onClick={() => setShowCountdown(false)}
-              className="px-5 py-2 bg-muted text-foreground rounded-lg font-medium text-sm"
+              className="w-full sm:w-auto px-5 py-2.5 bg-muted text-foreground rounded-lg font-medium text-sm"
             >
               Cancel
             </button>
@@ -177,10 +177,10 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
           />
         </div>
         {onComplete && (
-          <div className="shrink-0 h-14 bg-background border-t flex items-center justify-end px-4">
+          <div className="shrink-0 bg-background border-t flex items-center justify-end px-3 sm:px-4 py-2">
             <button
               onClick={() => { trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' }); onComplete() }}
-              className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+              className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
             >
               Mark complete &amp; continue
             </button>
@@ -272,16 +272,16 @@ function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
         />
       </div>
       {onComplete && (
-        <div className="shrink-0 h-14 bg-background border-t flex items-center justify-end px-4">
+        <div className="shrink-0 bg-background border-t flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 px-3 sm:px-4 py-2">
           <button
             onClick={handleReplayFromStart}
-            className="px-4 py-2 mr-2 bg-muted text-foreground rounded-lg text-sm font-medium"
+            className="w-full sm:w-auto px-4 py-2.5 bg-muted text-foreground rounded-lg text-sm font-medium"
           >
             Replay from start
           </button>
           <button
             onClick={handleContinue}
-            className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+            className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
           >
             Mark complete &amp; continue
           </button>
@@ -345,7 +345,7 @@ function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
         onLoad={handleLoad}
       />
       {onComplete && (
-        <div className="shrink-0 h-14 bg-background border-t flex items-center justify-end px-4">
+        <div className="shrink-0 bg-background border-t flex items-center justify-end px-3 sm:px-4 py-2">
           <button
             onClick={() => {
               clearInterval(timerRef.current!)
@@ -353,7 +353,7 @@ function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
               trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
               onComplete()
             }}
-            className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+            className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
           >
             Mark complete &amp; continue
           </button>
@@ -453,24 +453,24 @@ function PdfViewer({ asset, sessionId, onComplete }: any) {
         )}
       </div>
 
-      <div className="shrink-0 h-14 bg-background border-t flex items-center justify-between px-4">
-        <span className="text-sm text-muted-foreground">
+      <div className="shrink-0 bg-background border-t flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 px-3 sm:px-4 py-2">
+        <span className="text-xs sm:text-sm text-muted-foreground">
           {numPages > 0 ? `${numPages} pages · ${scrollPct}% read` : 'Loading…'}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <a
             href={downloadHref}
             download
             target="_blank"
             rel="noopener noreferrer"
-            className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium"
+            className="w-full sm:w-auto text-center px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium"
           >
             Download PDF
           </a>
           <button
             onClick={() => onComplete?.()}
             disabled={!onComplete}
-            className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+            className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
           >
             {onComplete ? 'Finish document' : 'Finish document (single layout)'}
           </button>
@@ -491,7 +491,7 @@ function ArticleViewer({ asset, sessionId, onComplete }: any) {
   return (
     <div className="w-full h-full flex flex-col">
       {/* address bar */}
-      <div className="shrink-0 flex items-center gap-3 bg-muted/60 border-b px-4 py-2">
+      <div className="shrink-0 flex items-center gap-3 bg-muted/60 border-b px-3 sm:px-4 py-2">
         <span className="flex-1 text-xs text-muted-foreground truncate">{url}</span>
         <a
           href={url}
@@ -511,13 +511,13 @@ function ArticleViewer({ asset, sessionId, onComplete }: any) {
         onError={() => setIframeBlocked(true)}
       />
 
-      <div className="shrink-0 h-14 bg-background border-t flex items-center justify-end px-4">
+      <div className="shrink-0 bg-background border-t flex items-center justify-end px-3 sm:px-4 py-2">
         <button
           onClick={() => {
             trackEvent({ sessionId, assetId: asset.id, eventType: 'scroll_100' })
             onComplete?.()
           }}
-          className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+          className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
         >
           Mark as read
         </button>
@@ -541,7 +541,7 @@ function ImageViewer({ asset, onComplete }: any) {
       <div className="shrink-0 mt-8">
         <button
           onClick={onComplete}
-          className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+          className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
         >
           Continue
         </button>
