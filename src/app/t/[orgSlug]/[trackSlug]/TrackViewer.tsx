@@ -120,7 +120,7 @@ export default function TrackViewer({
                         <img
                           src={thumb}
                           alt={asset.title}
-                          className={`w-full h-full object-cover ${asset.type === 'pdf' ? 'object-left-top' : ''}`}
+                          className="w-full h-full object-cover object-left-top"
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">No image</div>

@@ -243,7 +243,7 @@ export default function ExperienceViewer({
                               <img
                                 src={asset.thumbnailUrl}
                                 alt={asset.title}
-                                className={`w-full h-full object-cover ${asset.type === 'pdf' ? 'object-left-top' : ''}`}
+                                className="w-full h-full object-cover object-left-top"
                               />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
@@ -294,7 +294,7 @@ export default function ExperienceViewer({
                           <img
                             src={asset.thumbnailUrl}
                             alt={asset.title}
-                            className={`w-full h-full object-cover ${asset.type === 'pdf' ? 'object-left-top' : ''}`}
+                            className="w-full h-full object-cover object-left-top"
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
