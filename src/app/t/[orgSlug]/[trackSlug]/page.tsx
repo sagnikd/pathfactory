@@ -120,7 +120,8 @@ export default async function PublicTrackPage({
 
     // Resolve visitor IP → company (best-effort, non-blocking failure)
     const reqHeaders = await headers()
-    const rawIp = reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
+    const rawIp = reqHeaders.get('x-nf-client-connection-ip')           // Netlify edge
+               ?? reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
                ?? reqHeaders.get('x-real-ip')
                ?? null
     const ipInfo = await lookupIp(rawIp)

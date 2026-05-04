@@ -52,6 +52,18 @@ export default function TrackViewer({
     initializeTracking().then(() => setTrackingInitialized(true))
   }, [])
 
+  // Back-fill geo data for this session if the server-side lookup missed it
+  // (e.g. ipapi.co rate-limit, missing Netlify header on first render).
+  // Fire-and-forget — never blocks the UI.
+  useEffect(() => {
+    if (!sessionId) return
+    fetch('/api/session-geo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    }).catch(() => { /* silent — geo is best-effort */ })
+  }, [sessionId])
+
   useEffect(() => {
     if (trackingInitialized && currentAsset && sessionId) {
       trackEvent({ sessionId, assetId: currentAsset.id, eventType: 'view' })
