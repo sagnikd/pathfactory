@@ -3,12 +3,12 @@ import { abmAlerts, abmMatches } from '@/db/schema'
 import { desc, eq } from 'drizzle-orm'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 import { isAbmSchemaReady, listAbmAccounts } from '@/lib/abm'
-import { addAbmAccount, importAbmCsv } from './actions'
+import { addAbmAccount } from './actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import AbmAccountsEditor from './AbmAccountsEditor'
+import AbmCsvImport from './AbmCsvImport'
 
 export default async function AbmPage() {
   const { dbUser } = await getDashboardAuthContext()
@@ -38,11 +38,7 @@ export default async function AbmPage() {
 
       <section className="rounded-xl border bg-card p-5 space-y-4">
         <h2 className="font-semibold">Bulk Upload (CSV)</h2>
-        <p className="text-xs text-muted-foreground">Format: account_name,domain,priority,owner_email,notes</p>
-        <form action={importAbmCsv} className="space-y-3">
-          <Textarea name="csv" rows={6} placeholder={`Acme Corp,acme.com,high,owner@company.com,Strategic account`} />
-          <Button type="submit">Import CSV</Button>
-        </form>
+        <AbmCsvImport />
       </section>
 
       <section className="rounded-xl border bg-card p-5 space-y-4">
