@@ -126,11 +126,28 @@ export async function addUrlAsset(organizationId: string, url: string) {
 
 export async function updateAsset(
   assetId: string,
-  data: { title: string; thumbnailUrl: string | null }
+  data: { title: string; thumbnailUrl: string | null; tags?: string[] }
 ) {
   try {
+    const [existing] = await db.select({ metadataJson: assets.metadataJson })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+
+    const currentMeta = (existing?.metadataJson as Record<string, unknown> | null) ?? {}
+    const normalizedTags = (data.tags ?? [])
+      .map((t) => t.trim())
+      .filter(Boolean)
+
     await db.update(assets)
-      .set({ title: data.title, thumbnailUrl: data.thumbnailUrl, updatedAt: new Date() })
+      .set({
+        title: data.title,
+        thumbnailUrl: data.thumbnailUrl,
+        metadataJson: {
+          ...currentMeta,
+          tags: normalizedTags,
+        },
+        updatedAt: new Date(),
+      })
       .where(eq(assets.id, assetId))
     revalidatePath('/dashboard/assets')
     return { success: true }

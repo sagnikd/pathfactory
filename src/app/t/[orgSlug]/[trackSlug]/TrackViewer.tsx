@@ -17,6 +17,9 @@ type TrackViewerProps = {
     thumbnailUrl?: string | null
     sourceUrl?: string | null
     fileUrl?: string | null
+    metadataJson?: {
+      tags?: string[]
+    } | null
   }>
   org: { name: string }
   sessionId: string | null
@@ -92,7 +95,8 @@ export default function TrackViewer({
           <aside className="w-80 border-r bg-background overflow-y-auto p-3 space-y-2">
             {assets.map((asset, index) => {
               const active = index === effectiveIndex
-              const tag = asset.type ? asset.type.toUpperCase() : 'ASSET'
+              const tags = (asset.metadataJson?.tags ?? []).filter(Boolean)
+              const fallbackTag = asset.type ? asset.type.toUpperCase() : 'ASSET'
               const thumb = asset.thumbnailUrl || asset.fileUrl || asset.sourceUrl || null
               return (
                 <button
@@ -117,16 +121,19 @@ export default function TrackViewer({
                       <div className={`font-medium text-sm line-clamp-2 ${active ? 'text-primary' : 'text-foreground'}`}>
                         {asset.title}
                       </div>
-                      <div className="mt-2">
-                        <span
-                          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide ${
-                            asset.type === 'pdf'
-                              ? 'border-red-300 text-red-700 bg-red-50'
-                              : 'border-primary/40 text-primary bg-primary/5'
-                          }`}
-                        >
-                          {tag}
-                        </span>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {(tags.length > 0 ? tags.slice(0, 3) : [fallbackTag]).map((tag) => (
+                          <span
+                            key={tag}
+                            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide ${
+                              tag.toLowerCase() === 'pdf' || asset.type === 'pdf'
+                                ? 'border-red-300 text-red-700 bg-red-50'
+                                : 'border-primary/40 text-primary bg-primary/5'
+                            }`}
+                          >
+                            {tag}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   </div>

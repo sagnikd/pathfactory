@@ -207,8 +207,9 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
 
 function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
   const storageKey = `cloudinary-time-${asset.id}`
-  const savedTime = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
-  const src = withCloudinaryStartOffset(url, savedTime)
+  const initialSavedTime = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
+  const [resumeFrom, setResumeFrom] = useState(initialSavedTime)
+  const [src, setSrc] = useState(() => withCloudinaryStartOffset(url, initialSavedTime))
   const loadedAtRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -216,21 +217,21 @@ function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
     loadedAtRef.current = Date.now()
     if (timerRef.current) clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      const pos = savedTime + (Date.now() - loadedAtRef.current) / 1000
+      const pos = resumeFrom + (Date.now() - loadedAtRef.current) / 1000
       localStorage.setItem(storageKey, String(pos))
     }, 5000)
     trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
-  }, [savedTime, storageKey, sessionId, asset.id])
+  }, [resumeFrom, storageKey, sessionId, asset.id])
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
       if (loadedAtRef.current > 0) {
-        const pos = savedTime + (Date.now() - loadedAtRef.current) / 1000
-        if (pos > savedTime + 3) localStorage.setItem(storageKey, String(pos))
+        const pos = resumeFrom + (Date.now() - loadedAtRef.current) / 1000
+        if (pos > resumeFrom + 3) localStorage.setItem(storageKey, String(pos))
       }
     }
-  }, [savedTime, storageKey])
+  }, [resumeFrom, storageKey])
 
   const handleContinue = () => {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -239,11 +240,26 @@ function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
     onComplete?.()
   }
 
+  const handleReplayFromStart = () => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    loadedAtRef.current = 0
+    localStorage.removeItem(storageKey)
+    setResumeFrom(0)
+    try {
+      const u = new URL(url)
+      u.searchParams.set('source[transformation][start_offset]', '0')
+      u.searchParams.set('_replay', String(Date.now()))
+      setSrc(u.toString())
+    } catch {
+      setSrc(`${url}${url.includes('?') ? '&' : '?'}source%5Btransformation%5D%5Bstart_offset%5D=0&_replay=${Date.now()}`)
+    }
+  }
+
   return (
     <div className="w-full h-full flex flex-col bg-black">
-      {savedTime > 5 && (
+      {resumeFrom > 5 && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-foreground/90 text-background text-xs px-3 py-1.5 rounded-full shadow-lg pointer-events-none">
-          Resuming from {formatTime(savedTime)}
+          Resuming from {formatTime(resumeFrom)}
         </div>
       )}
       <div className="flex-1 relative">
@@ -257,6 +273,12 @@ function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
       </div>
       {onComplete && (
         <div className="shrink-0 h-14 bg-background border-t flex items-center justify-end px-4">
+          <button
+            onClick={handleReplayFromStart}
+            className="px-4 py-2 mr-2 bg-muted text-foreground rounded-lg text-sm font-medium"
+          >
+            Replay from start
+          </button>
           <button
             onClick={handleContinue}
             className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"

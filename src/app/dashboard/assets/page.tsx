@@ -18,7 +18,7 @@ export default async function AssetsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Assets</h1>
-          <p className="text-muted-foreground text-sm mt-1">Click any asset to edit its title or thumbnail</p>
+          <p className="text-muted-foreground text-sm mt-1">Click any asset to edit its title, thumbnail, and tags</p>
         </div>
         <AssetUploadDialog organizationId={dbUser.organizationId} />
       </div>

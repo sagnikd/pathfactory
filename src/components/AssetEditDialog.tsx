@@ -17,6 +17,9 @@ type Asset = {
   thumbnailUrl: string | null
   sourceUrl: string | null
   fileUrl: string | null
+  metadataJson?: {
+    tags?: string[]
+  } | null
 }
 
 function TypeIcon({ type }: { type: Asset['type'] }) {
@@ -25,6 +28,23 @@ function TypeIcon({ type }: { type: Asset['type'] }) {
   if (type === 'image') return <ImageIcon className="h-5 w-5" />
   return <Link2 className="h-5 w-5" />
 }
+
+const TAG_SUGGESTIONS = [
+  'Artificial intelligence',
+  'Automation',
+  'Analytics',
+  'Cloud',
+  'Data',
+  'Machine learning',
+  'Internet of things',
+  'Security',
+  '5G',
+  'Product demo',
+  'Customer story',
+  'Whitepaper',
+  'Webinar',
+  'PDF',
+]
 
 export function AssetEditDialog({
   asset,
@@ -37,9 +57,24 @@ export function AssetEditDialog({
 }) {
   const [title, setTitle] = useState(asset.title)
   const [thumbnailUrl, setThumbnailUrl] = useState(asset.thumbnailUrl ?? '')
+  const [tagsText, setTagsText] = useState((asset.metadataJson?.tags ?? []).join(', '))
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const selectedTags = tagsText
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+
+  const suggestionPool = TAG_SUGGESTIONS.filter(
+    (tag) => !selectedTags.some((t) => t.toLowerCase() === tag.toLowerCase())
+  )
+
+  function addSuggestedTag(tag: string) {
+    const next = [...selectedTags, tag]
+    setTagsText(next.join(', '))
+  }
 
   async function uploadImage(file: File) {
     setUploading(true)
@@ -54,8 +89,8 @@ export function AssetEditDialog({
       if (upErr) throw upErr
       const { data } = supabase.storage.from('assets').getPublicUrl(path)
       setThumbnailUrl(data.publicUrl)
-    } catch (err: any) {
-      setError(err.message || 'Upload failed')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
     }
@@ -75,6 +110,10 @@ export function AssetEditDialog({
     const res = await updateAsset(asset.id, {
       title: title.trim(),
       thumbnailUrl: thumbnailUrl || null,
+      tags: tagsText
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
     })
     setSaving(false)
     if (res.success) {
@@ -167,6 +206,33 @@ export function AssetEditDialog({
               onChange={(e) => setTitle(e.target.value)}
               className="h-10"
             />
+          </div>
+
+          {/* Tags */}
+          <div className="space-y-2">
+            <Label htmlFor="asset-tags">Tags</Label>
+            <Input
+              id="asset-tags"
+              value={tagsText}
+              onChange={(e) => setTagsText(e.target.value)}
+              placeholder="Artificial intelligence, 5G, PDF"
+              className="h-10"
+            />
+            <p className="text-xs text-muted-foreground">Comma-separated tags</p>
+            {suggestionPool.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {suggestionPool.slice(0, 10).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => addSuggestedTag(tag)}
+                    className="inline-flex items-center rounded border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 transition-colors"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Source URL (read-only) */}

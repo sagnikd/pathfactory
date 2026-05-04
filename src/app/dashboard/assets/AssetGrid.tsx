@@ -11,6 +11,9 @@ type Asset = {
   thumbnailUrl: string | null
   sourceUrl: string | null
   fileUrl: string | null
+  metadataJson?: {
+    tags?: string[]
+  } | null
 }
 
 function TypeIcon({ type }: { type: Asset['type'] }) {
@@ -58,6 +61,15 @@ export function AssetGrid({ assets }: { assets: Asset[] }) {
                 <p className="text-sm font-medium leading-snug line-clamp-2">{asset.title}</p>
                 <TypeIcon type={asset.type} />
               </div>
+              {asset.metadataJson?.tags && asset.metadataJson.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {asset.metadataJson.tags.slice(0, 3).map((tag) => (
+                    <span key={tag} className="inline-flex items-center rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground truncate">
                 {asset.sourceUrl || asset.fileUrl || '—'}
               </p>
