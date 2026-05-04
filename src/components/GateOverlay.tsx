@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -152,7 +152,10 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
   const [values,     setValues]     = useState<Record<string, string>>({})
   // Track which fields were auto-filled so we can show the badge
   const [autoFilled, setAutoFilled] = useState<Set<string>>(new Set())
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Bump this to force React to remount the overlay div if DevTools removes it
+  const [renderKey,  setRenderKey]  = useState(0)
+  const timerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
 
   // ── gate timer ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -205,6 +208,25 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
     })
   }, [showForm]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── DOM tamper protection ────────────────────────────────────────────────
+  // If someone deletes the overlay node via DevTools, detect it and force React
+  // to remount it. Background content is also pointer-events:none while the form
+  // is active so there's nothing to click even if the node is briefly absent.
+  const revive = useCallback(() => {
+    if (!overlayRef.current || !document.documentElement.contains(overlayRef.current)) {
+      setRenderKey(k => k + 1)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!showForm || submitted) return
+    const mo = new MutationObserver(revive)
+    mo.observe(document.documentElement, { childList: true, subtree: true })
+    const iv = setInterval(revive, 300)
+    return () => { mo.disconnect(); clearInterval(iv) }
+  }, [showForm, submitted, revive])
+  // ────────────────────────────────────────────────────────────────────────
+
   // ── helpers ─────────────────────────────────────────────────────────────
   const activeFields = (gateConfig?.fields ?? []).filter(f => f.enabled)
 
@@ -243,20 +265,27 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
 
   return (
     <div className="relative w-full h-full overflow-hidden">
-      {/* Content layer */}
+      {/* Content layer — pointer-events:none whenever form is active so content
+          stays unclickable even if the overlay node is briefly removed from DOM */}
       <div
-        className={
-          isHardGate && showForm
-            ? 'absolute inset-0 pointer-events-none select-none filter blur-sm opacity-25'
-            : 'absolute inset-0'
-        }
+        className={[
+          'absolute inset-0',
+          showForm ? 'pointer-events-none select-none' : '',
+          isHardGate && showForm ? 'filter blur-sm opacity-25' : '',
+        ].join(' ')}
       >
         {children}
       </div>
 
-      {/* Lead-capture modal */}
+      {/* Lead-capture modal — fixed + z-[9999] so it covers the full viewport
+          and can't be hidden by a parent's overflow:hidden.
+          key={renderKey} forces a remount if DevTools deletes the node. */}
       {showForm && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px]">
+        <div
+          ref={overlayRef}
+          key={renderKey}
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px]"
+        >
           <Card className="w-full max-w-md shadow-2xl">
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-2">

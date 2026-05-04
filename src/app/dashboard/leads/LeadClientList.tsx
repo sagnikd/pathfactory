@@ -6,10 +6,28 @@ import { Button } from '@/components/ui/button'
 import { format } from 'date-fns'
 import type { ScoreBreakdown } from '@/lib/leadScore'
 
-export default function LeadClientList({ leads, timelines, liveScores }: {
+type AnonVisit = {
+  visitorId:    string
+  company:      string | null
+  country:      string | null
+  city:         string | null
+  trackTitle:   string
+  dwellSeconds: number
+  lastSeen:     Date | string
+}
+
+function formatDwell(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return s > 0 ? `${m}m ${s}s` : `${m}m`
+}
+
+export default function LeadClientList({ leads, timelines, liveScores, anonymousTraffic }: {
   leads: any[]
   timelines: Record<string, any[]>
   liveScores: Record<string, ScoreBreakdown>
+  anonymousTraffic: AnonVisit[]
 }) {
   const [selectedVisitorId, setSelectedVisitorId] = useState<string | null>(null)
 
@@ -195,6 +213,73 @@ export default function LeadClientList({ leads, timelines, liveScores }: {
           </CardContent>
         </Card>
       </div>
+    </div>
+
+    {/* ── Anonymous Traffic ──────────────────────────────────────────── */}
+    <div className="mt-8">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <div>
+            <CardTitle>Anonymous Traffic</CardTitle>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Visitors who haven't submitted the lead form yet — sorted by time watched
+            </p>
+          </div>
+          <span className="text-sm font-medium text-muted-foreground">
+            {anonymousTraffic.length} visitor{anonymousTraffic.length !== 1 ? 's' : ''}
+          </span>
+        </CardHeader>
+        <CardContent className="p-0">
+          {anonymousTraffic.length === 0 ? (
+            <p className="text-sm text-muted-foreground p-6">No anonymous traffic yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <th className="text-left px-4 py-3">Company / Visitor</th>
+                    <th className="text-left px-4 py-3">Location</th>
+                    <th className="text-left px-4 py-3">Track viewed</th>
+                    <th className="text-left px-4 py-3">Time watched</th>
+                    <th className="text-left px-4 py-3">Last seen</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {anonymousTraffic.map((v, i) => (
+                    <tr key={v.visitorId} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3">
+                        {v.company ? (
+                          <span className="font-medium">{v.company}</span>
+                        ) : (
+                          <span className="text-muted-foreground italic">Anonymous #{i + 1}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {[v.city, v.country].filter(Boolean).join(', ') || '—'}
+                      </td>
+                      <td className="px-4 py-3 max-w-[200px] truncate" title={v.trackTitle}>
+                        {v.trackTitle}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`font-medium tabular-nums ${
+                          v.dwellSeconds >= 120 ? 'text-green-600 dark:text-green-400'
+                          : v.dwellSeconds >= 30 ? 'text-amber-500'
+                          : 'text-muted-foreground'
+                        }`}>
+                          {formatDwell(v.dwellSeconds)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {format(new Date(v.lastSeen), 'MMM d, h:mm a')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
