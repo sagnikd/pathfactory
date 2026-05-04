@@ -17,9 +17,7 @@ type Asset = {
   thumbnailUrl: string | null
   sourceUrl: string | null
   fileUrl: string | null
-  metadataJson?: {
-    tags?: string[]
-  } | null
+  metadataJson?: unknown
 }
 
 function TypeIcon({ type }: { type: Asset['type'] }) {
@@ -46,6 +44,13 @@ const TAG_SUGGESTIONS = [
   'PDF',
 ]
 
+function extractTags(metadataJson: unknown): string[] {
+  if (!metadataJson || typeof metadataJson !== 'object') return []
+  const maybeTags = (metadataJson as { tags?: unknown }).tags
+  if (!Array.isArray(maybeTags)) return []
+  return maybeTags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+}
+
 export function AssetEditDialog({
   asset,
   open,
@@ -57,7 +62,7 @@ export function AssetEditDialog({
 }) {
   const [title, setTitle] = useState(asset.title)
   const [thumbnailUrl, setThumbnailUrl] = useState(asset.thumbnailUrl ?? '')
-  const [tagsText, setTagsText] = useState((asset.metadataJson?.tags ?? []).join(', '))
+  const [tagsText, setTagsText] = useState(extractTags(asset.metadataJson).join(', '))
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
