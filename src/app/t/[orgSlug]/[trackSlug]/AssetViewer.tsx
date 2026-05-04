@@ -61,7 +61,7 @@ function formatTime(secs: number): string {
 
 // ─── Root viewer ─────────────────────────────────────────────────────────────
 
-export function AssetViewer({ asset, sessionId, onComplete }: any) {
+export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }: any) {
   const [showCountdown, setShowCountdown] = useState(false)
   const [countdown, setCountdown] = useState(3)
 
@@ -120,8 +120,8 @@ export function AssetViewer({ asset, sessionId, onComplete }: any) {
   return (
     <div className="relative w-full h-full">
       {(asset.type === 'video' || treatAsCloudinaryVideo) && <VideoViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
-      {asset.type === 'pdf'     && <PdfViewer     asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
-      {asset.type === 'article' && /\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <PdfViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
+      {asset.type === 'pdf'     && <PdfViewer     asset={asset} sessionId={sessionId} gateCleared={gateCleared} onComplete={handleAssetComplete} />}
+      {asset.type === 'article' && /\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <PdfViewer asset={asset} sessionId={sessionId} gateCleared={gateCleared} onComplete={handleAssetComplete} />}
       {asset.type === 'article' && !treatAsCloudinaryVideo && !/\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <ArticleViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
       {asset.type === 'image'   && <ImageViewer   asset={asset}                       onComplete={handleAssetComplete} />}
 
@@ -365,7 +365,7 @@ function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
 
 // ─── PDF viewer ──────────────────────────────────────────────────────────────
 
-function PdfViewer({ asset, sessionId, onComplete }: any) {
+function PdfViewer({ asset, sessionId, onComplete, gateCleared = true }: any) {
   const [numPages, setNumPages] = useState<number>(0)
   const [scrollPct, setScrollPct] = useState(0)
   const [resumed, setResumed] = useState(false)
@@ -458,15 +458,17 @@ function PdfViewer({ asset, sessionId, onComplete }: any) {
           {numPages > 0 ? `${numPages} pages · ${scrollPct}% read` : 'Loading…'}
         </span>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <a
-            href={downloadHref}
-            download
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full sm:w-auto text-center px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium"
-          >
-            Download PDF
-          </a>
+          {gateCleared && (
+            <a
+              href={downloadHref}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto text-center px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium"
+            >
+              Download PDF
+            </a>
+          )}
           <button
             onClick={() => onComplete?.()}
             disabled={!onComplete}

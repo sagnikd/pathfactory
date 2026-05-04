@@ -136,10 +136,11 @@ type Props = {
   visitorId: string | null
   gateConfig: GateConfig | null
   bypassGate?: boolean
+  onUnlock?: () => void   // called once when the gate is cleared
   children: React.ReactNode
 }
 
-export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false, children }: Props) {
+export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false, onUnlock, children }: Props) {
   const enabled      = gateConfig?.enabled ?? false
   const delaySeconds = gateConfig?.delaySeconds ?? 0
   const isHardGate   = delaySeconds === 0
@@ -156,6 +157,11 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
   const [renderKey,  setRenderKey]  = useState(0)
   const timerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+
+  // ── notify parent when gate is cleared ──────────────────────────────────
+  useEffect(() => {
+    if (submitted) onUnlock?.()
+  }, [submitted]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── gate timer ──────────────────────────────────────────────────────────
   useEffect(() => {

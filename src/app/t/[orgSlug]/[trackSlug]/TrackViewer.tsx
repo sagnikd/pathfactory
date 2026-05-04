@@ -49,6 +49,11 @@ export default function TrackViewer({
   const currentAsset = assets[effectiveIndex]
   const [trackingInitialized, setTrackingInitialized] = useState(false)
 
+  const gateConfig = (track.gateConfigJson as GateConfig | null) ?? null
+  // Gate is already cleared if: no gate, gate disabled, or visitor is known (bypassGate)
+  const gateActiveOnLoad = !!(gateConfig?.enabled) && !isKnownVisitor
+  const [gateCleared, setGateCleared] = useState(!gateActiveOnLoad)
+
   useEffect(() => {
     initializeTracking().then(() => setTrackingInitialized(true))
   }, [])
@@ -113,8 +118,6 @@ export default function TrackViewer({
   if (!currentAsset) {
     return <div className="p-8 text-center">No assets in this track.</div>
   }
-
-  const gateConfig = (track.gateConfigJson as GateConfig | null) ?? null
 
   return (
     <div className="flex flex-col h-screen">
@@ -198,11 +201,13 @@ export default function TrackViewer({
               visitorId={visitorId}
               gateConfig={gateConfig}
               bypassGate={isKnownVisitor}
+              onUnlock={() => setGateCleared(true)}
             >
               <AssetViewer
                 key={currentAsset.id}
                 asset={currentAsset}
                 sessionId={sessionId}
+                gateCleared={gateCleared}
                 onComplete={handleNext}
               />
             </GateOverlay>
@@ -215,11 +220,13 @@ export default function TrackViewer({
             visitorId={visitorId}
             gateConfig={gateConfig}
             bypassGate={isKnownVisitor}
+            onUnlock={() => setGateCleared(true)}
           >
             <AssetViewer
               key={currentAsset.id}
               asset={currentAsset}
               sessionId={sessionId}
+              gateCleared={gateCleared}
               onComplete={layout === 'binge' ? handleNext : undefined}
             />
           </GateOverlay>
