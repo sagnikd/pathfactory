@@ -160,51 +160,59 @@ export function AssetUploadDialog({
 
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return
-    const file = acceptedFiles[0]
     setLoading(true)
     setError(null)
     setProgress(null)
 
     try {
       const supabase = createClient()
-      const fileExt = file.name.split('.').pop()
-      const filePath = `${organizationId}/${crypto.randomUUID()}.${fileExt}`
+      const added: AddedAsset[] = []
 
-      setProgress('Uploading file…')
-      const { error: uploadError } = await supabase.storage.from('assets').upload(filePath, file)
-      if (uploadError) throw uploadError
-      const { data: fileData } = supabase.storage.from('assets').getPublicUrl(filePath)
+      for (let idx = 0; idx < acceptedFiles.length; idx += 1) {
+        const file = acceptedFiles[idx]
+        const fileExt = file.name.split('.').pop()
+        const filePath = `${organizationId}/${crypto.randomUUID()}.${fileExt}`
 
-      let thumbnailUrl: string | undefined
-      let title = filenameToTitle(file.name)
-      const type = file.type.includes('pdf') ? 'pdf' : file.type.includes('video') ? 'video' : 'image'
+        setProgress(`Uploading file ${idx + 1} of ${acceptedFiles.length}…`)
+        const { error: uploadError } = await supabase.storage.from('assets').upload(filePath, file)
+        if (uploadError) throw uploadError
+        const { data: fileData } = supabase.storage.from('assets').getPublicUrl(filePath)
 
-      if (type === 'pdf') {
-        setProgress('Reading PDF & generating thumbnail…')
-        const { blob, title: pdfTitle } = await processPdf(file)
-        title = pdfTitle
+        let thumbnailUrl: string | undefined
+        let title = filenameToTitle(file.name)
+        const type = file.type.includes('pdf') ? 'pdf' : file.type.includes('video') ? 'video' : 'image'
 
-        if (blob) {
-          setProgress('Uploading thumbnail…')
-          const thumbPath = `${organizationId}/thumbs/${crypto.randomUUID()}.jpg`
-          const { error: thumbErr } = await supabase.storage
-            .from('assets')
-            .upload(thumbPath, blob, { contentType: 'image/jpeg' })
+        if (type === 'pdf') {
+          setProgress(`Reading PDF ${idx + 1} of ${acceptedFiles.length} & generating thumbnail…`)
+          const { blob, title: pdfTitle } = await processPdf(file)
+          title = pdfTitle
 
-          if (!thumbErr) {
-            const { data: thumbData } = supabase.storage.from('assets').getPublicUrl(thumbPath)
-            thumbnailUrl = thumbData.publicUrl
+          if (blob) {
+            setProgress(`Uploading thumbnail ${idx + 1} of ${acceptedFiles.length}…`)
+            const thumbPath = `${organizationId}/thumbs/${crypto.randomUUID()}.jpg`
+            const { error: thumbErr } = await supabase.storage
+              .from('assets')
+              .upload(thumbPath, blob, { contentType: 'image/jpeg' })
+
+            if (!thumbErr) {
+              const { data: thumbData } = supabase.storage.from('assets').getPublicUrl(thumbPath)
+              thumbnailUrl = thumbData.publicUrl
+            }
           }
+        }
+
+        setProgress(`Saving ${idx + 1} of ${acceptedFiles.length}…`)
+        const res = await addFileAsset(organizationId, { fileUrl: fileData.publicUrl, title, type, thumbnailUrl })
+        if (res.success && res.asset) {
+          added.push(res.asset)
+        } else {
+          throw new Error(res.error || `Failed to save asset ${file.name}`)
         }
       }
 
-      setProgress('Saving…')
-      const res = await addFileAsset(organizationId, { fileUrl: fileData.publicUrl, title, type, thumbnailUrl })
-      if (res.success && res.asset) {
-        onAssetsAdded?.([res.asset])
+      if (added.length > 0) {
+        onAssetsAdded?.(added)
         setOpen(false)
-      } else {
-        setError(res.error || 'Failed to save asset')
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Upload failed. Check your Supabase "assets" bucket has public access.'
@@ -218,7 +226,7 @@ export function AssetUploadDialog({
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
-    maxFiles: 1,
+    maxFiles: 50,
     disabled: loading,
   })
 
@@ -254,10 +262,10 @@ export function AssetUploadDialog({
             ) : (
               <>
                 <p className="text-sm font-medium">
-                  {isDragActive ? 'Drop the PDF here' : 'Drag & drop a PDF, or click to browse'}
+                  {isDragActive ? 'Drop PDFs here' : 'Drag & drop PDFs, or click to browse'}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Title and thumbnail auto-extracted from the PDF
+                  Title and thumbnail auto-extracted from each PDF
                 </p>
               </>
             )}

@@ -2,8 +2,9 @@ import { notFound } from 'next/navigation'
 import { db } from '@/db'
 import { organizations, tracks, trackAssets, assets, sessions, visitors, leads } from '@/db/schema'
 import { eq, and, asc, desc } from 'drizzle-orm'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import TrackViewer from './TrackViewer'
+import { lookupIp } from '@/lib/ipLookup'
 import type { Metadata } from 'next'
 
 type TrackTheme = {
@@ -117,10 +118,23 @@ export default async function PublicTrackPage({
       }
     }
 
-    // Create session
+    // Resolve visitor IP → company (best-effort, non-blocking failure)
+    const reqHeaders = await headers()
+    const rawIp = reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
+               ?? reqHeaders.get('x-real-ip')
+               ?? null
+    const ipInfo = await lookupIp(rawIp)
+
+    // Create session — store IP/company so the notification bell can show it
     const [newSession] = await db.insert(sessions).values({
       visitorId: visitor.id,
       trackId: track.id,
+      deviceJson: {
+        ip:      ipInfo.ip,
+        company: ipInfo.company,
+        country: ipInfo.country,
+        city:    ipInfo.city,
+      },
     }).returning()
 
     sessionId = newSession.id

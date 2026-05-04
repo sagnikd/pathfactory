@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/db'
-import { users, organizations } from '@/db/schema'
+import { users, organizations, tracks } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { NavSidebar } from '@/components/NavSidebar'
+import { NotificationBell } from '@/components/NotificationBell'
 import { cookies } from 'next/headers'
 import { IMPERSONATE_COOKIE } from '@/lib/auth/impersonation'
 
@@ -75,10 +76,23 @@ export default async function DashboardLayout({
     }
   }
 
+  // Fetch org tracks for the notification bell
+  const orgTracks = dbUser
+    ? await db.select({ id: tracks.id, title: tracks.title })
+        .from(tracks)
+        .where(eq(tracks.organizationId, dbUser.organizationId))
+    : []
+  const orgTrackIds   = orgTracks.map(t => t.id)
+  const trackTitles   = Object.fromEntries(orgTracks.map(t => [t.id, t.title]))
+
   return (
     <div className="flex min-h-screen w-full bg-muted/30">
       <NavSidebar isSuperAdmin={isSuperAdmin} isImpersonating={isImpersonating} />
       <div className="flex flex-col flex-1 sm:pl-60">
+        {/* Top header with notification bell */}
+        <header className="sticky top-0 z-20 h-14 flex items-center justify-end px-6 border-b bg-background/95 backdrop-blur shrink-0">
+          <NotificationBell orgTrackIds={orgTrackIds} trackTitles={trackTitles} />
+        </header>
         <main className="flex-1 p-6 md:p-8">
           {children}
         </main>
