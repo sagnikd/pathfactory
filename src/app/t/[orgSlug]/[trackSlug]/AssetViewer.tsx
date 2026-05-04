@@ -70,16 +70,21 @@ export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }
   }
 
   // ── Dwell-time tracking ──────────────────────────────────────────────────
-  // Fire a `view` event immediately when this asset is displayed, then emit
-  // a `dwell_tick` every 10 seconds the tab is visible.  When the user switches
-  // tabs the ticker pauses; when they return it resumes.  Cleanup on unmount.
+  // Emit a `dwell_tick` every 10 s only while the page is both VISIBLE and
+  // FOCUSED.  Three signals can pause the ticker:
+  //   1. visibilitychange → hidden  (tab switch, minimize, screen lock)
+  //   2. window "blur"              (user switches to another app)
+  //   3. visibilitychange → visible but window still blurred (rare edge case)
   useEffect(() => {
     trackEvent({ sessionId, assetId: asset.id, eventType: 'view' })
 
     let tickInterval: ReturnType<typeof setInterval> | null = null
 
+    const isActive = () =>
+      document.visibilityState === 'visible' && document.hasFocus()
+
     const startTicking = () => {
-      if (tickInterval) return
+      if (tickInterval || !isActive()) return
       tickInterval = setInterval(() => {
         trackEvent({ sessionId, assetId: asset.id, eventType: 'dwell_tick' })
       }, 10_000)
@@ -91,15 +96,24 @@ export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }
 
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') stopTicking()
-      else startTicking()
+      else startTicking()          // only starts if window also has focus
     }
 
-    if (document.visibilityState === 'visible') startTicking()
+    const handleFocus = () => startTicking()
+    const handleBlur  = () => stopTicking()
+
+    // Kick off only if already active on mount
+    if (isActive()) startTicking()
+
     document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleFocus)
+    window.addEventListener('blur',  handleBlur)
 
     return () => {
       stopTicking()
       document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('blur',  handleBlur)
     }
   }, [asset.id, sessionId]) // re-runs when user navigates to a different asset
   // ────────────────────────────────────────────────────────────────────────
