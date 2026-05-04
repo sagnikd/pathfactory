@@ -5,7 +5,6 @@ import { initializeTracking, trackEvent } from '@/lib/tracking'
 import { Progress } from '@/components/ui/progress'
 import dynamic from 'next/dynamic'
 import { GateOverlay, type GateConfig } from '@/components/GateOverlay'
-import { createClient } from '@/lib/supabase/client'
 import { clientGeoLookup } from '@/lib/geoLookup'
 
 const AssetViewer = dynamic(() => import('./AssetViewer').then(m => m.AssetViewer), { ssr: false })
@@ -61,13 +60,8 @@ export default function TrackViewer({
 
   // 1. Client-side geo lookup (visitor's own IP — no shared server rate-limit).
   // 2. Store geo in session.deviceJson via /api/session-geo.
-  // 3. Broadcast visitor-alert to dashboard notification bell.
   useEffect(() => {
-    if (!sessionId || !org.id) return
-
-    const orgId    = org.id
-    const trackTitle = track.title
-    const trackId  = track.id
+    if (!sessionId) return
 
     ;(async () => {
       try {
@@ -85,23 +79,6 @@ export default function TrackViewer({
             company: geo.company,
           }),
         })
-
-        // Broadcast to the org's notification channel so the dashboard bell fires
-        const supabase = createClient()
-        await supabase.channel(`visitor-alerts:${orgId}`)
-          .send({
-            type: 'broadcast',
-            event: 'new-session',
-            payload: {
-              id:         sessionId,
-              trackId,
-              trackTitle,
-              company:    geo.company ?? null,
-              country:    geo.country ?? null,
-              city:       geo.city    ?? null,
-              startedAt:  new Date().toISOString(),
-            },
-          })
       } catch {
         // Best-effort — never block the visitor
       }
