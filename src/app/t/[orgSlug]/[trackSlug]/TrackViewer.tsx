@@ -238,6 +238,7 @@ export default function TrackViewer({
             gateConfig={gateConfig}
             bypassGate={isKnownVisitor}
             onUnlock={() => setGateCleared(true)}
+            onSubmit={fields => setSubmittedFields(fields)}
           >
             <AssetViewer
               key={currentAsset.id}
