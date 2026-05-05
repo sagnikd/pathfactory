@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { db } from '@/db'
-import { users, organizations } from '@/db/schema'
+import { users, organizations, pendingSignups } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -107,5 +107,57 @@ export async function stopImpersonation(): Promise<{ success: boolean }> {
   const cookieStore = await cookies()
   cookieStore.delete(IMPERSONATE_COOKIE)
   revalidatePath('/dashboard')
+  return { success: true }
+}
+
+/**
+ * Provision a pending signup: create a new org with the given name and
+ * wire up the user row so they can log in to the dashboard.
+ */
+export async function provisionUser(
+  pendingId: string,
+  orgName: string
+): Promise<{ success: boolean; error?: string }> {
+  await assertSuperAdmin()
+
+  const trimmed = orgName.trim()
+  if (!trimmed) return { success: false, error: 'Organisation name is required' }
+
+  const [pending] = await db.select().from(pendingSignups).where(eq(pendingSignups.id, pendingId))
+  if (!pending) return { success: false, error: 'Pending signup not found' }
+
+  try {
+    const slug =
+      trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-') +
+      '-' +
+      Math.random().toString(36).substring(2, 6)
+
+    const [org] = await db.insert(organizations).values({ name: trimmed, slug }).returning()
+
+    await db.insert(users).values({
+      id: pending.authUserId,
+      email: pending.email,
+      organizationId: org.id,
+      role: 'admin',
+    })
+
+    await db.delete(pendingSignups).where(eq(pendingSignups.id, pendingId))
+
+    revalidatePath('/dashboard/admin')
+    return { success: true }
+  } catch (err) {
+    console.error('[provisionUser]', err)
+    return { success: false, error: 'Failed to provision — check logs.' }
+  }
+
+}
+
+/** Dismiss/reject a pending signup without provisioning them. */
+export async function dismissPendingSignup(
+  pendingId: string
+): Promise<{ success: boolean; error?: string }> {
+  await assertSuperAdmin()
+  await db.delete(pendingSignups).where(eq(pendingSignups.id, pendingId))
+  revalidatePath('/dashboard/admin')
   return { success: true }
 }

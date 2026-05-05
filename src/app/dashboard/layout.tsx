@@ -70,8 +70,8 @@ export default async function DashboardLayout({
         redirect('/login?error=' + encodeURIComponent('Temporary database issue. Please try again.'))
       }
     } else {
-      // Regular user with no org — send them to sign up again (org not created)
-      redirect('/signup?error=' + encodeURIComponent('Account setup incomplete. Please sign up again.'))
+      // Regular user with no org — awaiting super-admin provisioning
+      redirect('/pending')
     }
   }
 

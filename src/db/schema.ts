@@ -216,3 +216,12 @@ export const abmAlerts = pgTable("abm_alerts", {
   payloadJson: jsonb("payload_json"),
   sentAt: timestamp("sent_at").defaultNow().notNull(),
 });
+
+// Pending signups — users who created a Supabase auth account but haven't been
+// provisioned with an organisation yet (awaiting super-admin approval).
+export const pendingSignups = pgTable("pending_signups", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  authUserId: uuid("auth_user_id").notNull().unique(),
+  email: text("email").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

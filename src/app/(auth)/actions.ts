@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { db } from '@/db'
-import { organizations, users } from '@/db/schema'
+import { pendingSignups } from '@/db/schema'
+import { eq } from 'drizzle-orm'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -27,16 +28,10 @@ export async function login(formData: FormData) {
 export async function signup(formData: FormData) {
   const supabase = await createClient()
 
-  const data = {
-    email: formData.get('email') as string,
-    password: formData.get('password') as string,
-    orgName: formData.get('orgName') as string,
-  }
+  const email    = (formData.get('email')    as string).trim().toLowerCase()
+  const password =  formData.get('password') as string
 
-  const { data: authData, error } = await supabase.auth.signUp({
-    email: data.email,
-    password: data.password,
-  })
+  const { data: authData, error } = await supabase.auth.signUp({ email, password })
 
   if (error) {
     redirect('/signup?error=' + encodeURIComponent(error.message))
@@ -44,25 +39,16 @@ export async function signup(formData: FormData) {
 
   if (authData.user) {
     try {
-      const slug = data.orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
-      
-      const [org] = await db.insert(organizations).values({
-        name: data.orgName,
-        slug: slug,
-      }).returning();
-
-      await db.insert(users).values({
-        id: authData.user.id,
-        email: data.email,
-        organizationId: org.id,
-        role: 'admin'
-      });
+      // Upsert so re-submitting after email confirmation doesn't error
+      await db.insert(pendingSignups)
+        .values({ authUserId: authData.user.id, email })
+        .onConflictDoNothing()
     } catch (dbError) {
-      console.error(dbError);
-      redirect('/signup?error=' + encodeURIComponent('Failed to create organization'))
+      console.error('[signup] pending_signups insert failed:', dbError)
+      // Don't block the user — they still have an auth account
     }
   }
 
-  revalidatePath('/', 'layout')
-  redirect('/dashboard')
+  // Don't grant dashboard access until super admin provisions an org
+  redirect('/pending')
 }

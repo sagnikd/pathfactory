@@ -48,8 +48,8 @@ export default async function SignupPage({
           </div>
 
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Create an account</h1>
-            <p className="text-muted-foreground">Set up your workspace in under a minute</p>
+            <h1 className="text-3xl font-bold tracking-tight">Request access</h1>
+            <p className="text-muted-foreground">Create your account — our team will activate your workspace shortly</p>
           </div>
 
           <form action={signup} className="space-y-4">
@@ -58,16 +58,6 @@ export default async function SignupPage({
                 {params.error}
               </div>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="orgName" className="text-sm font-medium">Organization name</Label>
-              <Input
-                id="orgName"
-                name="orgName"
-                placeholder="Acme Corp"
-                required
-                className="h-11"
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium">Work email</Label>
               <Input
@@ -92,7 +82,7 @@ export default async function SignupPage({
               />
             </div>
             <Button type="submit" className="w-full h-11 text-base font-medium mt-2">
-              Get started
+              Request access
             </Button>
           </form>
 
