@@ -108,6 +108,92 @@ function isTelecomOrISP(org: string): boolean {
   return TELECOM_PATTERNS.some(p => p.test(org))
 }
 
+/** Field pairs that should share a row when both are present and enabled */
+const FIELD_PAIRS: [string, string][] = [
+  ['firstName', 'lastName'],
+  ['city', 'country'],
+]
+
+function FieldInput({
+  field,
+  value,
+  autoFilled,
+  onChange,
+}: {
+  field: LeadField
+  value: string
+  autoFilled: boolean
+  onChange: (val: string) => void
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Label htmlFor={field.name}>
+          {field.label}
+          {field.required && <span className="text-destructive ml-0.5">*</span>}
+        </Label>
+        {autoFilled && (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary flex items-center gap-0.5">
+            <Sparkles className="w-2.5 h-2.5" />
+            detected
+          </span>
+        )}
+      </div>
+      <Input
+        id={field.name}
+        type={field.type}
+        required={field.required}
+        placeholder={field.type === 'email' ? 'you@company.com' : ''}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={autoFilled ? 'border-primary/40 bg-primary/5' : ''}
+      />
+    </div>
+  )
+}
+
+function renderFieldGroups(
+  fields: LeadField[],
+  values: Record<string, string>,
+  autoFilled: Set<string>,
+  onChange: (name: string, val: string) => void,
+) {
+  const rendered = new Set<string>()
+  const out: React.ReactNode[] = []
+
+  for (const field of fields) {
+    if (rendered.has(field.name)) continue
+
+    // Check if this field is the first of a known pair
+    const pair = FIELD_PAIRS.find(([a]) => a === field.name)
+    const partner = pair ? fields.find(f => f.name === pair[1]) : null
+
+    if (partner) {
+      rendered.add(field.name)
+      rendered.add(partner.name)
+      out.push(
+        <div key={`${field.name}+${partner.name}`} className="grid grid-cols-2 gap-3">
+          <FieldInput field={field}   value={values[field.name]   ?? ''} autoFilled={autoFilled.has(field.name)}   onChange={v => onChange(field.name,   v)} />
+          <FieldInput field={partner} value={values[partner.name] ?? ''} autoFilled={autoFilled.has(partner.name)} onChange={v => onChange(partner.name, v)} />
+        </div>
+      )
+    } else {
+      rendered.add(field.name)
+      out.push(
+        <FieldInput
+          key={field.name}
+          field={field}
+          value={values[field.name] ?? ''}
+          autoFilled={autoFilled.has(field.name)}
+          onChange={v => onChange(field.name, v)}
+        />
+      )
+    }
+  }
+
+  return out
+}
+
 async function fetchIpData(): Promise<Partial<IpData>> {
   // clientGeoLookup already filters telecom/ISP companies to null
   const geo = await clientGeoLookup()
@@ -325,37 +411,7 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
                     />
                   </div>
                 ) : (
-                  activeFields.map(field => (
-                    <div key={field.name} className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor={field.name}>
-                          {field.label}
-                          {field.required && <span className="text-destructive ml-0.5">*</span>}
-                        </Label>
-                        {autoFilled.has(field.name) && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary flex items-center gap-0.5">
-                            <Sparkles className="w-2.5 h-2.5" />
-                            detected
-                          </span>
-                        )}
-                      </div>
-                      <Input
-                        id={field.name}
-                        type={field.type}
-                        required={field.required}
-                        placeholder={
-                          field.type === 'email'
-                            ? 'you@company.com'
-                            : autoFilled.has(field.name)
-                            ? ''
-                            : ''
-                        }
-                        value={values[field.name] ?? ''}
-                        onChange={e => handleChange(field.name, e.target.value)}
-                        className={autoFilled.has(field.name) ? 'border-primary/40 bg-primary/5' : ''}
-                      />
-                    </div>
-                  ))
+                  renderFieldGroups(activeFields, values, autoFilled, handleChange)
                 )}
 
                 {error && <p className="text-xs text-destructive">{error}</p>}
