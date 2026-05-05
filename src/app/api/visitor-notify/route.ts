@@ -66,12 +66,21 @@ export async function POST(req: Request) {
       hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
     })
 
-    const fromDomain = process.env.RESEND_FROM_EMAIL ?? 'notifications@updates.contentengagementplatform.com'
-    const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/leads`
-      : 'https://your-app.netlify.app/dashboard/leads'
+    // Use verified custom domain if configured, otherwise fall back to Resend's
+    // shared sender (works on free plan without DNS verification).
+    const fromDomain = (
+      process.env.RESEND_FROM_EMAIL &&
+      process.env.RESEND_FROM_EMAIL !== 'notifications@yourdomain.com'
+    )
+      ? process.env.RESEND_FROM_EMAIL
+      : 'onboarding@resend.dev'
 
-    await resend.emails.send({
+    const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL &&
+      process.env.NEXT_PUBLIC_APP_URL !== 'https://your-app.netlify.app'
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/leads`
+      : null
+
+    const { data, error: resendError } = await resend.emails.send({
       from: `${orgName} Alerts <${fromDomain}>`,
       to:   adminEmail,
       subject: `👀 Someone from ${company ?? location} is viewing "${trackTitle}"`,
@@ -143,6 +152,7 @@ export async function POST(req: Request) {
             </table>
 
             <!-- CTA -->
+            ${dashboardUrl ? `
             <table cellpadding="0" cellspacing="0">
               <tr>
                 <td style="border-radius:8px;background:#18181b;">
@@ -151,7 +161,7 @@ export async function POST(req: Request) {
                   </a>
                 </td>
               </tr>
-            </table>
+            </table>` : ''}
           </td>
         </tr>
 
@@ -172,7 +182,13 @@ export async function POST(req: Request) {
 </html>`,
     })
 
-    return NextResponse.json({ ok: true, sentTo: adminEmail, visitor: visitorLabel })
+    if (resendError) {
+      console.error('[visitor-notify] Resend error:', JSON.stringify(resendError))
+      return NextResponse.json({ ok: false, resendError }, { status: 500 })
+    }
+
+    console.log('[visitor-notify] Email sent:', data?.id, '→', adminEmail)
+    return NextResponse.json({ ok: true, sentTo: adminEmail, emailId: data?.id, visitor: visitorLabel })
   } catch (err) {
     console.error('[visitor-notify]', err)
     return NextResponse.json({ error: 'internal error' }, { status: 500 })
