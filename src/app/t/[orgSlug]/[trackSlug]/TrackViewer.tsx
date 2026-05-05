@@ -55,6 +55,8 @@ export default function TrackViewer({
   // Gate is already cleared if: no gate, gate disabled, or visitor is known (bypassGate)
   const gateActiveOnLoad = !!(gateConfig?.enabled) && !isKnownVisitor
   const [gateCleared, setGateCleared] = useState(!gateActiveOnLoad)
+  // Fields submitted via the gate form on this session (first-time visitors)
+  const [submittedFields, setSubmittedFields] = useState<Record<string, string> | null>(null)
 
   useEffect(() => {
     initializeTracking().then(() => setTrackingInitialized(true))
@@ -120,12 +122,30 @@ export default function TrackViewer({
       <header className="flex min-h-14 items-center justify-between gap-3 px-3 sm:px-4 py-2 border-b shrink-0 bg-background/95 backdrop-blur">
         <div className="min-w-0">
           <div className="font-bold text-sm sm:text-base truncate">{org.name} — {track.title}</div>
-          {typeof returningVisitorName === 'string' && returningVisitorName.trim() && (
-            <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
-              Welcome back, {returningVisitorName}
-              {returningVisitorCompany ? ` from ${returningVisitorCompany}` : ''}
-            </p>
-          )}
+          {(() => {
+            // Returning visitor: data comes from DB (server-side)
+            if (isKnownVisitor && returningVisitorName?.trim()) {
+              const company = returningVisitorCompany ?? null
+              return (
+                <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
+                  Welcome back, {returningVisitorName}{company ? ` from ${company}` : ''}
+                </p>
+              )
+            }
+            // First-time visitor: just submitted the gate form this session
+            if (submittedFields) {
+              const name    = submittedFields.firstName?.trim()
+                           || submittedFields.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim()
+                           || null
+              const company = submittedFields.company?.trim() || null
+              if (name) return (
+                <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
+                  Welcome, {name}{company ? ` from ${company}` : ''}
+                </p>
+              )
+            }
+            return null
+          })()}
         </div>
         <div className="text-xs sm:text-sm text-muted-foreground shrink-0">
           {effectiveIndex + 1} / {assets.length}
@@ -198,6 +218,7 @@ export default function TrackViewer({
               gateConfig={gateConfig}
               bypassGate={isKnownVisitor}
               onUnlock={() => setGateCleared(true)}
+              onSubmit={fields => setSubmittedFields(fields)}
             >
               <AssetViewer
                 key={currentAsset.id}

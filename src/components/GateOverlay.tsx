@@ -123,11 +123,12 @@ type Props = {
   visitorId: string | null
   gateConfig: GateConfig | null
   bypassGate?: boolean
-  onUnlock?: () => void   // called once when the gate is cleared
+  onUnlock?: () => void
+  onSubmit?: (fields: Record<string, string>) => void  // fired with form values on first submission
   children: React.ReactNode
 }
 
-export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false, onUnlock, children }: Props) {
+export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false, onUnlock, onSubmit, children }: Props) {
   const enabled      = gateConfig?.enabled ?? false
   const delaySeconds = gateConfig?.delaySeconds ?? 0
   const isHardGate   = delaySeconds === 0
@@ -243,6 +244,7 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
         localStorage.setItem(`unlocked_${trackId}`, 'true')
         setSubmitted(true)
         setShowForm(false)
+        onSubmit?.(values)
       } else {
         setError('Something went wrong. Please try again.')
       }
