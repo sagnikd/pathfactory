@@ -315,7 +315,7 @@ export async function processAbmLeadMatch(input: {
 
     const subject = `🎯 ABM Alert: ${matchResolved.accountName} engaged with "${track.title}"`
     const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL !== 'https://your-app.netlify.app'
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/abm`
+      ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/dashboard/abm`
       : null
 
     const html = buildAbmEmail({
@@ -516,7 +516,7 @@ export async function processAbmSessionMatch(input: {
     const locationParts = [input.city, input.country].filter(Boolean)
     const location = locationParts.length > 0 ? locationParts.join(', ') : undefined
     const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL !== 'https://your-app.netlify.app'
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/abm`
+      ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/dashboard/abm`
       : null
 
     const subject = `🎯 ABM Alert: ${match.accountName} is viewing "${input.trackTitle}"`

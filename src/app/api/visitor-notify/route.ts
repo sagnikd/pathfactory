@@ -83,7 +83,7 @@ export async function POST(req: Request) {
 
     const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL &&
       process.env.NEXT_PUBLIC_APP_URL !== 'https://your-app.netlify.app'
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/leads`
+      ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/dashboard/leads`
       : null
 
     const { data, error: resendError } = await resend.emails.send({
