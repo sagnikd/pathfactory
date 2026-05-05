@@ -208,8 +208,18 @@ async function sendEmailAlert(params: {
   html: string
 }): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY?.trim()
-  const from = process.env.ABM_ALERT_FROM?.trim() || 'ABM Alerts <onboarding@resend.dev>'
-  if (!apiKey) return false
+  if (!apiKey || apiKey === 'your_resend_api_key_here') return false
+
+  const from = process.env.RESEND_FROM_EMAIL &&
+    process.env.RESEND_FROM_EMAIL !== 'notifications@yourdomain.com'
+    ? `ABM Alerts <${process.env.RESEND_FROM_EMAIL}>`
+    : 'ABM Alerts <onboarding@resend.dev>'
+
+  // RESEND_TO_EMAIL overrides all recipients on free plan
+  // (onboarding@resend.dev can only deliver to the Resend signup email)
+  const to = process.env.RESEND_TO_EMAIL
+    ? [process.env.RESEND_TO_EMAIL]
+    : params.to
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -218,17 +228,25 @@ async function sendEmailAlert(params: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from,
-        to: params.to,
-        subject: params.subject,
-        html: params.html,
-      }),
+      body: JSON.stringify({ from, to, subject: params.subject, html: params.html }),
     })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error('[abm] Resend error:', res.status, body)
+    }
     return res.ok
-  } catch {
+  } catch (e) {
+    console.error('[abm] sendEmailAlert failed:', e)
     return false
   }
+}
+
+/** Shared helper: get org admin recipients */
+async function getAdminRecipients(orgId: string): Promise<string[]> {
+  const adminUsers = await db.select({ email: users.email })
+    .from(users)
+    .where(and(eq(users.organizationId, orgId), eq(users.role, 'admin')))
+  return Array.from(new Set(adminUsers.map(u => u.email).filter(Boolean)))
 }
 
 export async function processAbmLeadMatch(input: {
@@ -292,30 +310,25 @@ export async function processAbmLeadMatch(input: {
       name: organizations.name,
       slug: organizations.slug,
     }).from(organizations).where(eq(organizations.id, track.organizationId))
-    const adminUsers = await db.select({ email: users.email })
-      .from(users)
-      .where(and(eq(users.organizationId, track.organizationId), eq(users.role, 'admin')))
-    const recipients = Array.from(new Set(adminUsers.map((u) => u.email).filter(Boolean)))
+    const recipients = await getAdminRecipients(track.organizationId)
     if (recipients.length === 0) return
 
-    const subject = `ABM Alert: ${matchResolved.accountName} engaged with ${track.title}`
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || ''
-    const trackUrl = baseUrl ? `${baseUrl}/t/${org?.slug ?? ''}/${track.slug}` : ''
+    const subject = `🎯 ABM Alert: ${matchResolved.accountName} engaged with "${track.title}"`
+    const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL !== 'https://your-app.netlify.app'
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/abm`
+      : null
 
-    const html = `
-    <div style="font-family:Arial,sans-serif;line-height:1.5">
-      <h2 style="margin:0 0 12px">ABM Account Activity Detected</h2>
-      <p><strong>Account:</strong> ${matchResolved.accountName}</p>
-      <p><strong>Matched by:</strong> ${matchResolved.source} (${matchResolved.confidence})</p>
-      <p><strong>Email:</strong> ${input.email}</p>
-      <p><strong>Organization:</strong> ${org?.name ?? 'Unknown'}</p>
-      <p><strong>Track:</strong> ${track.title}</p>
-      ${trackUrl ? `<p><a href="${trackUrl}">Open track</a></p>` : ''}
-      <p style="color:#666;font-size:12px">Sent by Content Engagement Platform ABM Intelligence</p>
-    </div>
-    `
+    const html = buildAbmEmail({
+      accountName: matchResolved.accountName,
+      matchSource: matchResolved.source,
+      confidence: matchResolved.confidence,
+      trackTitle: track.title,
+      email: input.email,
+      dashboardUrl,
+    })
 
     const sent = await sendEmailAlert({ to: recipients, subject, html })
+    console.log('[abm] lead_submit alert sent:', sent, '→', recipients)
 
     await db.insert(abmAlerts).values({
       organizationId: track.organizationId,
@@ -333,6 +346,208 @@ export async function processAbmLeadMatch(input: {
     })
   } catch {
     // Never block lead capture because ABM tables/migrations are not ready.
+  }
+}
+
+function buildAbmEmail(params: {
+  accountName: string
+  matchSource: string
+  confidence: string
+  trackTitle: string
+  email?: string
+  company?: string
+  location?: string
+  dashboardUrl: string | null
+}): string {
+  const { accountName, matchSource, confidence, trackTitle, email, company, location, dashboardUrl } = params
+  const sourceLabel = matchSource === 'email_domain' ? 'Email domain'
+    : matchSource === 'reverse_ip' ? 'Reverse IP lookup'
+    : 'Company name match'
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+        <tr>
+          <td style="background:#18181b;padding:24px 32px;">
+            <p style="margin:0;font-size:13px;color:#a1a1aa;letter-spacing:.05em;text-transform:uppercase;font-weight:600;">ABM Intelligence</p>
+            <h1 style="margin:8px 0 0;font-size:22px;color:#fff;font-weight:700;">Target Account Engaged</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px;">
+            <p style="margin:0 0 24px;font-size:15px;color:#3f3f46;line-height:1.6;">
+              A visitor from one of your target ABM accounts just engaged with your content.
+            </p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;overflow:hidden;margin-bottom:24px;">
+              <tr><td style="padding:20px 24px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                      <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;">Account</span>
+                    </td>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                      <span style="font-size:14px;color:#18181b;font-weight:700;">${accountName}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                      <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;">Track</span>
+                    </td>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                      <span style="font-size:14px;color:#18181b;">${trackTitle}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                      <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;">Match method</span>
+                    </td>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                      <span style="font-size:14px;color:#18181b;">${sourceLabel} <span style="color:#71717a;">(${confidence})</span></span>
+                    </td>
+                  </tr>
+                  ${email ? `<tr>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                      <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;">Email</span>
+                    </td>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                      <span style="font-size:14px;color:#18181b;">${email}</span>
+                    </td>
+                  </tr>` : ''}
+                  ${company ? `<tr>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                      <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;">Company (IP)</span>
+                    </td>
+                    <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                      <span style="font-size:14px;color:#18181b;">${company}</span>
+                    </td>
+                  </tr>` : ''}
+                  ${location ? `<tr>
+                    <td style="padding:6px 0;">
+                      <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;">Location</span>
+                    </td>
+                    <td style="padding:6px 0;text-align:right;">
+                      <span style="font-size:14px;color:#18181b;">${location}</span>
+                    </td>
+                  </tr>` : ''}
+                </table>
+              </td></tr>
+            </table>
+            ${dashboardUrl ? `
+            <table cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="border-radius:8px;background:#18181b;">
+                  <a href="${dashboardUrl}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#fff;text-decoration:none;">
+                    View ABM Dashboard →
+                  </a>
+                </td>
+              </tr>
+            </table>` : ''}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 32px 24px;border-top:1px solid #f0f0f0;">
+            <p style="margin:0;font-size:12px;color:#a1a1aa;">
+              Alerts fire at most once per account per 6 hours.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+}
+
+/**
+ * Called from /api/visitor-notify after geo is resolved.
+ * Tries to match the session's reverse-IP company against ABM accounts
+ * and fires an alert for anonymous visitors (no form submission needed).
+ */
+export async function processAbmSessionMatch(input: {
+  sessionId: string
+  trackId: string
+  orgId: string
+  company: string | null
+  city: string | null
+  country: string | null
+  trackTitle: string
+  trackSlug: string
+  visitorId: string | null
+}) {
+  if (!input.company) return              // nothing to match on
+  if (!(await isAbmSchemaReady())) return
+
+  try {
+    // Try company name fuzzy match against ABM accounts
+    const match = await matchAbmByCompanyName(input.orgId, input.company)
+    if (!match) return
+
+    // 6-hour dedupe: same account + session trigger
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000)
+    const recent = await db.select({ id: abmAlerts.id })
+      .from(abmAlerts)
+      .where(and(
+        eq(abmAlerts.organizationId, input.orgId),
+        eq(abmAlerts.abmAccountId, match.accountId),
+        eq(abmAlerts.triggerType, 'session_visit'),
+        gte(abmAlerts.sentAt, sixHoursAgo),
+      ))
+      .limit(1)
+    if (recent.length > 0) return
+
+    // Record the match
+    await db.insert(abmMatches).values({
+      organizationId: input.orgId,
+      visitorId: input.visitorId ?? '',
+      abmAccountId: match.accountId,
+      matchSource: match.source,
+      confidence: match.confidence,
+      matchedValue: match.matchedValue,
+      payloadJson: { company: input.company, trackTitle: input.trackTitle },
+    }).onConflictDoNothing()
+
+    const recipients = await getAdminRecipients(input.orgId)
+    if (recipients.length === 0) return
+
+    const locationParts = [input.city, input.country].filter(Boolean)
+    const location = locationParts.length > 0 ? locationParts.join(', ') : undefined
+    const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL !== 'https://your-app.netlify.app'
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/abm`
+      : null
+
+    const subject = `🎯 ABM Alert: ${match.accountName} is viewing "${input.trackTitle}"`
+    const html = buildAbmEmail({
+      accountName: match.accountName,
+      matchSource: match.source,
+      confidence: match.confidence,
+      trackTitle: input.trackTitle,
+      company: input.company,
+      location,
+      dashboardUrl,
+    })
+
+    const sent = await sendEmailAlert({ to: recipients, subject, html })
+    console.log('[abm] session_visit alert sent:', sent, '→', recipients)
+
+    await db.insert(abmAlerts).values({
+      organizationId: input.orgId,
+      abmAccountId: match.accountId,
+      visitorId: input.visitorId ?? undefined,
+      triggerType: 'session_visit',
+      recipientsJson: recipients,
+      payloadJson: {
+        sent,
+        company: input.company,
+        trackTitle: input.trackTitle,
+        accountName: match.accountName,
+      },
+    })
+  } catch (e) {
+    console.error('[abm] processAbmSessionMatch error:', e)
   }
 }
 

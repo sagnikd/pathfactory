@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { db } from '@/db'
 import { sessions, tracks, users, organizations } from '@/db/schema'
 import { eq } from 'drizzle-orm'
+import { processAbmSessionMatch } from '@/lib/abm'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -28,11 +29,13 @@ export async function POST(req: Request) {
     const rows = await db
       .select({
         trackId:    sessions.trackId,
+        trackSlug:  tracks.slug,
         trackTitle: tracks.title,
         orgId:      tracks.organizationId,
         orgName:    organizations.name,
         deviceJson: sessions.deviceJson,
         startedAt:  sessions.startedAt,
+        visitorId:  sessions.visitorId,
       })
       .from(sessions)
       .innerJoin(tracks,        eq(sessions.trackId,       tracks.id))
@@ -41,7 +44,7 @@ export async function POST(req: Request) {
       .limit(1)
 
     if (!rows.length) return NextResponse.json({ ok: false, reason: 'session not found' })
-    const { trackTitle, orgId, orgName, deviceJson, startedAt } = rows[0]
+    const { trackId, trackSlug, trackTitle, orgId, orgName, deviceJson, startedAt, visitorId } = rows[0]
 
     // Find the org admin email
     const adminRows = await db
@@ -191,6 +194,20 @@ export async function POST(req: Request) {
     }
 
     console.log('[visitor-notify] Email sent:', data?.id, '→', adminEmail)
+
+    // ABM session match — fire-and-forget, never blocks the response
+    processAbmSessionMatch({
+      sessionId,
+      trackId,
+      orgId,
+      company:    company ?? null,
+      city:       city    ?? null,
+      country:    country ?? null,
+      trackTitle,
+      trackSlug,
+      visitorId:  visitorId ?? null,
+    }).catch(e => console.error('[visitor-notify] ABM session match error:', e))
+
     return NextResponse.json({ ok: true, sentTo: adminEmail, emailId: data?.id, visitor: visitorLabel })
   } catch (err) {
     console.error('[visitor-notify]', err)
