@@ -158,37 +158,55 @@ function renderFieldGroups(
   autoFilled: Set<string>,
   onChange: (name: string, val: string) => void,
 ) {
+  const fieldMap = new Map(fields.map(f => [f.name, f]))
   const rendered = new Set<string>()
   const out: React.ReactNode[] = []
 
   for (const field of fields) {
     if (rendered.has(field.name)) continue
 
-    // Check if this field is the first of a known pair
-    const pair = FIELD_PAIRS.find(([a]) => a === field.name)
-    const partner = pair ? fields.find(f => f.name === pair[1]) : null
+    // Find which canonical pair this field belongs to (either position)
+    const pair = FIELD_PAIRS.find(([a, b]) => a === field.name || b === field.name)
 
-    if (partner) {
-      rendered.add(field.name)
-      rendered.add(partner.name)
-      out.push(
-        <div key={`${field.name}+${partner.name}`} className="grid grid-cols-2 gap-3">
-          <FieldInput field={field}   value={values[field.name]   ?? ''} autoFilled={autoFilled.has(field.name)}   onChange={v => onChange(field.name,   v)} />
-          <FieldInput field={partner} value={values[partner.name] ?? ''} autoFilled={autoFilled.has(partner.name)} onChange={v => onChange(partner.name, v)} />
-        </div>
-      )
-    } else {
-      rendered.add(field.name)
-      out.push(
-        <FieldInput
-          key={field.name}
-          field={field}
-          value={values[field.name] ?? ''}
-          autoFilled={autoFilled.has(field.name)}
-          onChange={v => onChange(field.name, v)}
-        />
-      )
+    if (pair) {
+      const [canonA, canonB] = pair
+      const fieldA = fieldMap.get(canonA)
+      const fieldB = fieldMap.get(canonB)
+
+      // Only render the pair when we encounter the canonical-first field,
+      // and only if both fields are actually in the active list.
+      if (field.name === canonA && fieldA && fieldB) {
+        rendered.add(canonA)
+        rendered.add(canonB)
+        out.push(
+          <div key={`${canonA}+${canonB}`} className="grid grid-cols-2 gap-3">
+            <FieldInput field={fieldA} value={values[canonA] ?? ''} autoFilled={autoFilled.has(canonA)} onChange={v => onChange(canonA, v)} />
+            <FieldInput field={fieldB} value={values[canonB] ?? ''} autoFilled={autoFilled.has(canonB)} onChange={v => onChange(canonB, v)} />
+          </div>
+        )
+        continue
+      }
+
+      // This field is the canonical-second; skip — it will be rendered above
+      // when the canonical-first is processed.
+      if (field.name === canonB && fieldA) {
+        rendered.add(canonB)
+        // Don't push anything — fieldA's iteration will emit both together
+        continue
+      }
     }
+
+    // No pair match (or partner not present) — render full width
+    rendered.add(field.name)
+    out.push(
+      <FieldInput
+        key={field.name}
+        field={field}
+        value={values[field.name] ?? ''}
+        autoFilled={autoFilled.has(field.name)}
+        onChange={v => onChange(field.name, v)}
+      />
+    )
   }
 
   return out
