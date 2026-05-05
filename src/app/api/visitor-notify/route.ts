@@ -1,0 +1,188 @@
+import { NextResponse } from 'next/server'
+import { Resend } from 'resend'
+import { db } from '@/db'
+import { sessions, tracks, users, organizations } from '@/db/schema'
+import { eq } from 'drizzle-orm'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+/**
+ * POST /api/visitor-notify
+ * Body: { sessionId: string }
+ *
+ * Looks up the session → track → org → admin email, then sends a
+ * "visitor is browsing your track" notification via Resend.
+ * Fire-and-forget from TrackViewer — failures are silent to the visitor.
+ */
+export async function POST(req: Request) {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey || apiKey === 'your_resend_api_key_here') {
+    return NextResponse.json({ ok: false, reason: 'RESEND_API_KEY not configured' })
+  }
+
+  try {
+    const { sessionId } = await req.json()
+    if (!sessionId) return NextResponse.json({ ok: false, reason: 'sessionId required' })
+
+    // Fetch session + track + org in one join
+    const rows = await db
+      .select({
+        trackId:    sessions.trackId,
+        trackTitle: tracks.title,
+        orgId:      tracks.organizationId,
+        orgName:    organizations.name,
+        deviceJson: sessions.deviceJson,
+        startedAt:  sessions.startedAt,
+      })
+      .from(sessions)
+      .innerJoin(tracks,        eq(sessions.trackId,       tracks.id))
+      .innerJoin(organizations, eq(tracks.organizationId,  organizations.id))
+      .where(eq(sessions.id, sessionId))
+      .limit(1)
+
+    if (!rows.length) return NextResponse.json({ ok: false, reason: 'session not found' })
+    const { trackTitle, orgId, orgName, deviceJson, startedAt } = rows[0]
+
+    // Find the org admin email
+    const adminRows = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.organizationId, orgId))
+      .limit(1)
+
+    if (!adminRows.length) return NextResponse.json({ ok: false, reason: 'no admin found' })
+    const adminEmail = adminRows[0].email
+
+    const geo = (deviceJson ?? {}) as Record<string, string | null>
+    const company  = geo.company ?? null
+    const city     = geo.city    ?? null
+    const country  = geo.country ?? null
+
+    const locationParts = [city, country].filter(Boolean)
+    const location = locationParts.length > 0 ? locationParts.join(', ') : 'Unknown location'
+    const visitorLabel = company ? `${company} (${location})` : location
+    const visitedAt = new Date(startedAt).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    })
+
+    const fromDomain = process.env.RESEND_FROM_EMAIL ?? 'notifications@updates.contentengagementplatform.com'
+    const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/leads`
+      : 'https://your-app.netlify.app/dashboard/leads'
+
+    await resend.emails.send({
+      from: `${orgName} Alerts <${fromDomain}>`,
+      to:   adminEmail,
+      subject: `👀 Someone from ${company ?? location} is viewing "${trackTitle}"`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:#18181b;padding:24px 32px;">
+            <p style="margin:0;font-size:13px;color:#a1a1aa;letter-spacing:.05em;text-transform:uppercase;font-weight:600;">Content Engagement Platform</p>
+            <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">New Visitor Alert</h1>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:32px;">
+            <p style="margin:0 0 24px;font-size:15px;color:#3f3f46;line-height:1.6;">
+              Someone is actively browsing one of your content tracks right now.
+            </p>
+
+            <!-- Detail card -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;overflow:hidden;margin-bottom:24px;">
+              <tr>
+                <td style="padding:20px 24px;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                        <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Track</span>
+                      </td>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                        <span style="font-size:14px;color:#18181b;font-weight:600;">${escapeHtml(trackTitle)}</span>
+                      </td>
+                    </tr>
+                    ${company ? `
+                    <tr>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                        <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Company</span>
+                      </td>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                        <span style="font-size:14px;color:#18181b;font-weight:600;">${escapeHtml(company)}</span>
+                      </td>
+                    </tr>` : ''}
+                    <tr>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                        <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Location</span>
+                      </td>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                        <span style="font-size:14px;color:#18181b;">${escapeHtml(location)}</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:6px 0;">
+                        <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Time</span>
+                      </td>
+                      <td style="padding:6px 0;text-align:right;">
+                        <span style="font-size:14px;color:#18181b;">${escapeHtml(visitedAt)}</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <!-- CTA -->
+            <table cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="border-radius:8px;background:#18181b;">
+                  <a href="${dashboardUrl}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:.01em;">
+                    View in Dashboard →
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:16px 32px 24px;border-top:1px solid #f0f0f0;">
+            <p style="margin:0;font-size:12px;color:#a1a1aa;">
+              You're receiving this because you're an admin on ${escapeHtml(orgName)}.<br>
+              These alerts fire once per visitor session.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`,
+    })
+
+    return NextResponse.json({ ok: true, sentTo: adminEmail, visitor: visitorLabel })
+  } catch (err) {
+    console.error('[visitor-notify]', err)
+    return NextResponse.json({ error: 'internal error' }, { status: 500 })
+  }
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}

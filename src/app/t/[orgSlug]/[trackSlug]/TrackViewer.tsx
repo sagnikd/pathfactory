@@ -79,6 +79,13 @@ export default function TrackViewer({
             company: geo.company,
           }),
         })
+
+        // Notify the org admin by email (fire-and-forget, silent on failure)
+        fetch('/api/visitor-notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+        }).catch(() => {})
       } catch {
         // Best-effort — never block the visitor
       }
