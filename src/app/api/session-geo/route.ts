@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { db } from '@/db'
-import { sessions } from '@/db/schema'
+import { sessions, tracks } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { lookupIp } from '@/lib/ipLookup'
+import { processAbmSessionMatch } from '@/lib/abm'
 
 /**
  * POST /api/session-geo
@@ -75,6 +76,38 @@ export async function POST(req: Request) {
         city:    city    ?? existing.city    ?? null,
       }
       await db.update(sessions).set({ deviceJson: merged }).where(eq(sessions.id, sessionId))
+
+      // Fire ABM session match if we have a company from client-side geo.
+      // This is the correct place because visitor-notify reads deviceJson which
+      // is populated by server-side IP (always Netlify infra → no company).
+      if (company) {
+        const trackRows = await db
+          .select({
+            trackId:    tracks.id,
+            trackSlug:  tracks.slug,
+            trackTitle: tracks.title,
+            orgId:      tracks.organizationId,
+          })
+          .from(tracks)
+          .where(eq(tracks.id, session.trackId))
+          .limit(1)
+
+        if (trackRows.length > 0) {
+          const { trackId, trackSlug, trackTitle, orgId } = trackRows[0]
+          processAbmSessionMatch({
+            sessionId,
+            trackId,
+            orgId,
+            company,
+            city:    city    ?? null,
+            country: country ?? null,
+            trackTitle,
+            trackSlug,
+            visitorId: session.visitorId ?? null,
+          }).catch(e => console.error('[session-geo] ABM match error:', e))
+        }
+      }
+
       return NextResponse.json({ ok: true, source, country, city, company })
     }
 
