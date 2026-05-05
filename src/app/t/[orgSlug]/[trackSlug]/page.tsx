@@ -73,6 +73,7 @@ export default async function PublicTrackPage({
   let sessionId = null;
   let visitorId = null;
   let returningVisitorName: string | null = null;
+  let returningVisitorCompany: string | null = null;
   let isKnownVisitor = false;
 
   if (visitorIdCookie) {
@@ -110,7 +111,11 @@ export default async function PublicTrackPage({
         const fallbackName =
           lead.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim() ?? ''
 
-        returningVisitorName = firstName || fallbackName || null
+        returningVisitorName    = firstName || fallbackName || null
+        returningVisitorCompany =
+          typeof fields?.company === 'string' && fields.company.trim()
+            ? fields.company.trim()
+            : null
       } else if (visitor.capturedEmail) {
         isKnownVisitor = true
         returningVisitorName =
@@ -152,6 +157,7 @@ export default async function PublicTrackPage({
         sessionId={sessionId}
         visitorId={visitorId}
         returningVisitorName={returningVisitorName}
+        returningVisitorCompany={returningVisitorCompany}
         isKnownVisitor={isKnownVisitor}
       />
     </div>

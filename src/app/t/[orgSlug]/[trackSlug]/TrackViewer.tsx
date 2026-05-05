@@ -24,6 +24,7 @@ type TrackViewerProps = {
   sessionId: string | null
   visitorId: string | null
   returningVisitorName?: string | null
+  returningVisitorCompany?: string | null
   isKnownVisitor?: boolean
 }
 
@@ -34,6 +35,7 @@ export default function TrackViewer({
   sessionId,
   visitorId,
   returningVisitorName,
+  returningVisitorCompany,
   isKnownVisitor = false,
 }: TrackViewerProps) {
   function extractTags(metadataJson: unknown): string[] {
@@ -120,7 +122,8 @@ export default function TrackViewer({
           <div className="font-bold text-sm sm:text-base truncate">{org.name} — {track.title}</div>
           {typeof returningVisitorName === 'string' && returningVisitorName.trim() && (
             <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
-              Welcome {returningVisitorName} from {org.name}
+              Welcome back, {returningVisitorName}
+              {returningVisitorCompany ? ` from ${returningVisitorCompany}` : ''}
             </p>
           )}
         </div>
