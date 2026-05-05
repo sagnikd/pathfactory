@@ -51,7 +51,10 @@ export async function POST(req: Request) {
       .limit(1)
 
     if (!adminRows.length) return NextResponse.json({ ok: false, reason: 'no admin found' })
-    const adminEmail = adminRows[0].email
+    // RESEND_TO_EMAIL lets you override the recipient during testing — required
+    // when using onboarding@resend.dev (Resend free plan only delivers to the
+    // email address you signed up with).
+    const adminEmail = process.env.RESEND_TO_EMAIL ?? adminRows[0].email
 
     const geo = (deviceJson ?? {}) as Record<string, string | null>
     const company  = geo.company ?? null
