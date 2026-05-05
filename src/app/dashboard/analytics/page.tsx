@@ -1,9 +1,11 @@
 import { db } from '@/db'
 import { engagements, sessions, visitors, assets } from '@/db/schema'
-import { eq, count, sql, desc, inArray } from 'drizzle-orm'
+import { eq, count, sql, desc, inArray, and, gte, lte } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AnalyticsCharts from './AnalyticsCharts'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
+import { DateRangeFilter } from './DateRangeFilter'
+import { Suspense } from 'react'
 
 function fmtDwell(secs: number): string {
   if (secs < 60) return `${secs}s`
@@ -12,77 +14,106 @@ function fmtDwell(secs: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`
 }
 
-export default async function AnalyticsDashboard() {
+function parseDateParam(val: string | undefined, endOfDay = false): Date | null {
+  if (!val) return null
+  const d = new Date(val)
+  if (isNaN(d.getTime())) return null
+  if (endOfDay) d.setHours(23, 59, 59, 999)
+  return d
+}
+
+export default async function AnalyticsDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string }>
+}) {
   const { dbUser } = await getDashboardAuthContext()
   const orgId = dbUser.organizationId
 
-  // 1. Overview stats
-  // Total visitors and sessions are global for the org right now. To be precise, we filter by assets belonging to the org.
-  // We'll get all assets for this org to use as a filter
-  const orgAssets = await db.select({ id: assets.id }).from(assets).where(eq(assets.organizationId, orgId))
-  const orgAssetIds = orgAssets.map(a => a.id)
+  const sp       = await searchParams
+  const dateFrom = parseDateParam(sp.from)
+  const dateTo   = parseDateParam(sp.to, true)
 
-  let totalVisitors = 0;
-  let totalSessions = 0;
-  
+  // Date filters applied to engagements.ts
+  const engDateConds = [
+    dateFrom ? gte(engagements.ts, dateFrom) : undefined,
+    dateTo   ? lte(engagements.ts, dateTo)   : undefined,
+  ].filter((x): x is NonNullable<typeof x> => !!x)
+
+  // 1. Org assets
+  const orgAssets    = await db.select({ id: assets.id }).from(assets).where(eq(assets.organizationId, orgId))
+  const orgAssetIds  = orgAssets.map(a => a.id)
+
+  let totalVisitors = 0
+  let totalSessions = 0
+
   if (orgAssetIds.length > 0) {
+    const baseWhere = and(inArray(engagements.assetId, orgAssetIds), ...engDateConds)
+
     const sessionsRes = await db.select({ count: count() })
       .from(sessions)
       .innerJoin(engagements, eq(sessions.id, engagements.sessionId))
-      .where(inArray(engagements.assetId, orgAssetIds))
+      .where(baseWhere)
       .groupBy(sessions.id)
-    
-    totalSessions = sessionsRes.length; // Distinct sessions that interacted with org assets
+    totalSessions = sessionsRes.length
 
     const visitorsRes = await db.select({ count: count() })
       .from(visitors)
       .innerJoin(sessions, eq(visitors.id, sessions.visitorId))
       .innerJoin(engagements, eq(sessions.id, engagements.sessionId))
-      .where(inArray(engagements.assetId, orgAssetIds))
+      .where(baseWhere)
       .groupBy(visitors.id)
-      
-    totalVisitors = visitorsRes.length;
+    totalVisitors = visitorsRes.length
   }
 
-  // 2. Top Assets
+  // 2. Top assets with date-filtered engagement join
   const topAssets = await db.select({
     assetId: assets.id,
-    title: assets.title,
+    title:   assets.title,
     views: sql<number>`count(CASE WHEN ${engagements.eventType} = 'view' THEN 1 END)`.mapWith(Number),
-    // dwell_tick fires every 10 s while the tab is visible.
-    // Divide by sessions that actually emitted a dwell_tick (not all sessions)
-    // so a bounce (view but 0 ticks) doesn't drag the average down to near zero.
     avgDwellTime: sql<number>`
       count(CASE WHEN ${engagements.eventType} = 'dwell_tick' THEN 1 END) * 10.0
       / GREATEST(
           count(DISTINCT CASE WHEN ${engagements.eventType} = 'dwell_tick' THEN ${engagements.sessionId} END),
           1
-        )`.mapWith(Number)
+        )`.mapWith(Number),
   })
   .from(assets)
-  .leftJoin(engagements, eq(assets.id, engagements.assetId))
+  .leftJoin(engagements, and(eq(assets.id, engagements.assetId), ...engDateConds))
   .where(eq(assets.organizationId, orgId))
   .groupBy(assets.id, assets.title)
   .orderBy(desc(sql`count(CASE WHEN ${engagements.eventType} = 'view' THEN 1 END)`))
   .limit(5)
 
   const funnelData = topAssets.map(a => ({
-    name: a.title.substring(0, 15) + (a.title.length > 15 ? '...' : ''),
-    views: a.views
+    name:  a.title.substring(0, 15) + (a.title.length > 15 ? '...' : ''),
+    views: a.views,
   }))
 
-  // Overall avg dwell = total dwell seconds across all org assets
-  //                     / number of distinct (asset, session) pairs that had at least one tick
-  const engagedAssets = topAssets.filter(a => a.avgDwellTime > 0)
+  const engagedAssets   = topAssets.filter(a => a.avgDwellTime > 0)
   const overallAvgDwell = engagedAssets.length > 0
     ? Math.round(engagedAssets.reduce((sum, a) => sum + a.avgDwellTime, 0) / engagedAssets.length)
     : 0
 
-  return (
-    <div className="p-8">
-      <h1 className="text-3xl font-bold mb-8">Analytics Overview</h1>
+  const rangeLabel = sp.from || sp.to
+    ? [sp.from, sp.to].filter(Boolean).join(' → ')
+    : 'All time'
 
-      <div className="grid gap-4 md:grid-cols-3 mb-8">
+  return (
+    <div className="space-y-6">
+      {/* Header + filter */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{rangeLabel}</p>
+        </div>
+        <Suspense>
+          <DateRangeFilter />
+        </Suspense>
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Visitors</CardTitle>
@@ -101,7 +132,7 @@ export default async function AnalyticsDashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Average Dwell / Asset</CardTitle>
+            <CardTitle className="text-sm font-medium">Avg Dwell / Asset</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{fmtDwell(overallAvgDwell)}</div>
@@ -112,8 +143,9 @@ export default async function AnalyticsDashboard() {
         </Card>
       </div>
 
+      {/* Charts */}
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="col-span-1">
+        <Card>
           <CardHeader>
             <CardTitle>Asset View Funnel</CardTitle>
           </CardHeader>
@@ -122,27 +154,25 @@ export default async function AnalyticsDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="col-span-1">
+        <Card>
           <CardHeader>
             <CardTitle>Top Performing Assets</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-8">
+            <div className="space-y-6">
               {topAssets.map(asset => (
-                <div key={asset.assetId} className="flex items-center">
-                  <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">{asset.title}</p>
+                <div key={asset.assetId} className="flex items-center gap-4">
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <p className="text-sm font-medium leading-none truncate">{asset.title}</p>
                     <p className="text-sm text-muted-foreground">
-                      {asset.views} view{asset.views !== 1 ? 's' : ''} • avg {fmtDwell(Math.round(asset.avgDwellTime))} dwell
+                      {asset.views} view{asset.views !== 1 ? 's' : ''} · avg {fmtDwell(Math.round(asset.avgDwellTime))} dwell
                     </p>
                   </div>
-                  <div className="ml-auto font-medium">
-                    {asset.views} views
-                  </div>
+                  <div className="font-medium text-sm shrink-0">{asset.views} views</div>
                 </div>
               ))}
               {topAssets.length === 0 && (
-                <div className="text-muted-foreground text-sm">No data available yet.</div>
+                <p className="text-muted-foreground text-sm">No data yet.</p>
               )}
             </div>
           </CardContent>
