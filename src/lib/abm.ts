@@ -178,9 +178,81 @@ async function matchAbmByReverseIpDomain(orgId: string, domain: string): Promise
   }
 }
 
+// ─── Company-name fuzzy matching helpers ────────────────────────────────────
+
+/** Legal / corporate suffixes to strip before comparing */
+const CORP_SUFFIXES = /\b(s\.?r\.?l\.?|s\.?a\.?s?\.?|s\.?p\.?a\.?|llc|llp|ltd|limited|inc|incorporated|corp|corporation|co\.?|gmbh|ag|bv|nv|pty|plc|lp|lllp|pllc|pc|pvt|sdn\s+bhd|bhd)\b\.?/gi
+
+function normalizeCompany(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(CORP_SUFFIXES, '')       // strip legal suffixes
+    .replace(/[^a-z0-9\s]/g, ' ')    // punctuation → space
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function tokenize(name: string): string[] {
+  // Filter very short filler tokens ('of', 'the', 'and', 'de', '&')
+  return normalizeCompany(name)
+    .split(' ')
+    .filter(t => t.length > 1 && !['of', 'the', 'and', 'de', 'la', 'le', 'van'].includes(t))
+}
+
+/** Levenshtein distance (for single-token fallback) */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  )
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+  return dp[m][n]
+}
+
+/**
+ * Returns a 0–1 similarity score between two company names.
+ * Strategy:
+ *  1. Strip suffixes + punctuation, tokenize.
+ *  2. Token overlap: what fraction of the shorter name's tokens appear in the longer?
+ *  3. Single-token fallback: Levenshtein similarity.
+ */
+function companyNameSimilarity(a: string, b: string): number {
+  const ta = tokenize(a)
+  const tb = tokenize(b)
+
+  if (ta.length === 0 || tb.length === 0) return 0
+
+  // Token overlap — works for "Abstract" vs "Abstract SRL", "HCL" vs "HCL Technologies"
+  const [shorter, longer] = ta.length <= tb.length ? [ta, tb] : [tb, ta]
+  const longerSet = new Set(longer)
+  const matched = shorter.filter(t => longerSet.has(t)).length
+  const overlapScore = matched / shorter.length
+
+  if (overlapScore >= 0.8) return overlapScore   // strong token match → done
+
+  // Fuzzy single-token: compare the two normalised strings directly
+  // Useful for slight typos: "Abstact" vs "Abstract"
+  const na = normalizeCompany(a)
+  const nb = normalizeCompany(b)
+  const maxLen = Math.max(na.length, nb.length)
+  if (maxLen === 0) return 0
+  const lev = levenshtein(na, nb)
+  const levScore = 1 - lev / maxLen
+
+  return Math.max(overlapScore, levScore)
+}
+
+/** Minimum score to treat two company names as the same */
+const COMPANY_MATCH_THRESHOLD = 0.75
+
 async function matchAbmByCompanyName(orgId: string, companyName: string): Promise<MatchResult | null> {
-  const normalized = companyName.trim().toLowerCase()
-  if (!normalized) return null
+  const cleaned = companyName.trim()
+  if (!cleaned) return null
+
   const rows = await db.select({
     accountId: abmAccounts.id,
     accountName: abmAccounts.accountName,
@@ -188,17 +260,21 @@ async function matchAbmByCompanyName(orgId: string, companyName: string): Promis
   .from(abmAccounts)
   .where(and(eq(abmAccounts.organizationId, orgId), eq(abmAccounts.status, 'active')))
 
-  const found = rows.find((r) => {
-    const n = r.accountName.trim().toLowerCase()
-    return n.includes(normalized) || normalized.includes(n)
-  })
-  if (!found) return null
+  let best: { row: typeof rows[0]; score: number } | null = null
+  for (const row of rows) {
+    const score = companyNameSimilarity(cleaned, row.accountName)
+    if (score >= COMPANY_MATCH_THRESHOLD && (!best || score > best.score)) {
+      best = { row, score }
+    }
+  }
+
+  if (!best) return null
   return {
-    accountId: found.accountId,
-    accountName: found.accountName,
+    accountId: best.row.accountId,
+    accountName: best.row.accountName,
     source: 'fuzzy',
-    confidence: 'low',
-    matchedValue: companyName.trim(),
+    confidence: best.score >= 0.95 ? 'medium' : 'low',
+    matchedValue: cleaned,
   }
 }
 
