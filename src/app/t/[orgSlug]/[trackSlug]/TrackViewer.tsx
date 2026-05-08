@@ -84,12 +84,15 @@ export default function TrackViewer({
           }),
         })
 
-        // Notify the org admin by email (fire-and-forget, silent on failure)
-        fetch('/api/visitor-notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId }),
-        }).catch(() => {})
+        // Notify the org admin by email only after 60 s of browsing,
+        // so we don't spam on quick bounces. Fire-and-forget.
+        setTimeout(() => {
+          fetch('/api/visitor-notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId }),
+          }).catch(() => {})
+        }, 60_000)
       } catch {
         // Best-effort — never block the visitor
       }
