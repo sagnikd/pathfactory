@@ -1,5 +1,5 @@
 import { db } from '@/db'
-import { engagements, sessions, visitors, assets } from '@/db/schema'
+import { engagements, sessions, visitors, assets, leads } from '@/db/schema'
 import { eq, count, sql, desc, inArray, and, gte, lte } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AnalyticsCharts from './AnalyticsCharts'
@@ -12,6 +12,14 @@ function fmtDwell(secs: number): string {
   const m = Math.floor(secs / 60)
   const s = Math.round(secs % 60)
   return s > 0 ? `${m}m ${s}s` : `${m}m`
+}
+
+/** HH:MM:SS format like the reference design */
+function fmtHMS(secs: number): string {
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = Math.floor(secs % 60)
+  return [h, m, s].map(v => String(v).padStart(2, '0')).join(':')
 }
 
 function parseDateParam(val: string | undefined, endOfDay = false): Date | null {
@@ -34,15 +42,23 @@ export default async function AnalyticsDashboard({
   const dateFrom = parseDateParam(sp.from)
   const dateTo   = parseDateParam(sp.to, true)
 
-  // Date filters applied to engagements.ts
   const engDateConds = [
     dateFrom ? gte(engagements.ts, dateFrom) : undefined,
     dateTo   ? lte(engagements.ts, dateTo)   : undefined,
   ].filter((x): x is NonNullable<typeof x> => !!x)
 
-  // 1. Org assets
-  const orgAssets    = await db.select({ id: assets.id }).from(assets).where(eq(assets.organizationId, orgId))
-  const orgAssetIds  = orgAssets.map(a => a.id)
+  // Date filter fragment for raw SQL
+  const dateFilter = dateFrom && dateTo
+    ? sql` AND e.ts BETWEEN ${dateFrom} AND ${dateTo}`
+    : dateFrom
+    ? sql` AND e.ts >= ${dateFrom}`
+    : dateTo
+    ? sql` AND e.ts <= ${dateTo}`
+    : sql``
+
+  // ── 1. KPI counts ──────────────────────────────────────────────────────────
+  const orgAssets   = await db.select({ id: assets.id }).from(assets).where(eq(assets.organizationId, orgId))
+  const orgAssetIds = orgAssets.map(a => a.id)
 
   let totalVisitors = 0
   let totalSessions = 0
@@ -66,7 +82,7 @@ export default async function AnalyticsDashboard({
     totalVisitors = visitorsRes.length
   }
 
-  // 2. Top assets with date-filtered engagement join
+  // ── 2. Funnel / avg dwell (existing) ──────────────────────────────────────
   const topAssets = await db.select({
     assetId: assets.id,
     title:   assets.title,
@@ -85,19 +101,110 @@ export default async function AnalyticsDashboard({
   .orderBy(desc(sql`count(CASE WHEN ${engagements.eventType} = 'view' THEN 1 END)`))
   .limit(5)
 
-  const funnelData = topAssets.map(a => ({
-    name:  a.title.substring(0, 15) + (a.title.length > 15 ? '...' : ''),
-    views: a.views,
-  }))
-
-  const engagedAssets   = topAssets.filter(a => a.avgDwellTime > 0)
+  const funnelData     = topAssets.map(a => ({ name: a.title.substring(0, 15) + (a.title.length > 15 ? '...' : ''), views: a.views }))
+  const engagedAssets  = topAssets.filter(a => a.avgDwellTime > 0)
   const overallAvgDwell = engagedAssets.length > 0
     ? Math.round(engagedAssets.reduce((sum, a) => sum + a.avgDwellTime, 0) / engagedAssets.length)
     : 0
 
+  // ── 3. Top 5 by total engagement time ─────────────────────────────────────
+  type DwellRow = { asset_id: string; title: string; dwell_secs: number; views: number }
+  const dwellRes = await db.execute<DwellRow>(sql`
+    SELECT
+      a.id   AS asset_id,
+      a.title,
+      (COUNT(CASE WHEN e.event_type = 'dwell_tick' THEN 1 END) * 10)::int AS dwell_secs,
+      COUNT(CASE WHEN e.event_type = 'view' THEN 1 END)::int AS views
+    FROM assets a
+    LEFT JOIN engagements e ON e.asset_id = a.id ${dateFilter}
+    WHERE a.organization_id = ${orgId}::uuid
+    GROUP BY a.id, a.title
+    HAVING COUNT(CASE WHEN e.event_type = 'dwell_tick' THEN 1 END) > 0
+    ORDER BY dwell_secs DESC
+    LIMIT 5
+  `)
+  const topByDwell = dwellRes.rows
+
+  // ── 4. Top 5 by content binge rate ────────────────────────────────────────
+  type BingeRow = { asset_id: string; title: string; total_sessions: number; binge_sessions: number; binge_rate: number }
+  const bingeRes = await db.execute<BingeRow>(sql`
+    WITH session_counts AS (
+      SELECT e.session_id, COUNT(DISTINCT e.asset_id) AS asset_count
+      FROM engagements e
+      JOIN assets a ON a.id = e.asset_id
+      WHERE e.event_type = 'view'
+        AND a.organization_id = ${orgId}::uuid
+      GROUP BY e.session_id
+    )
+    SELECT
+      a.id   AS asset_id,
+      a.title,
+      COUNT(DISTINCT e.session_id)::int AS total_sessions,
+      COUNT(DISTINCT CASE WHEN sc.asset_count > 1 THEN e.session_id END)::int AS binge_sessions,
+      ROUND(
+        100.0 * COUNT(DISTINCT CASE WHEN sc.asset_count > 1 THEN e.session_id END)
+        / GREATEST(COUNT(DISTINCT e.session_id), 1)
+      )::int AS binge_rate
+    FROM assets a
+    JOIN engagements e ON e.asset_id = a.id AND e.event_type = 'view'
+    JOIN session_counts sc ON sc.session_id = e.session_id
+    WHERE a.organization_id = ${orgId}::uuid
+    GROUP BY a.id, a.title
+    HAVING COUNT(DISTINCT e.session_id) > 0
+    ORDER BY binge_rate DESC, total_sessions DESC
+    LIMIT 5
+  `)
+  const topByBinge = bingeRes.rows
+
+  // ── 5. Top accounts ───────────────────────────────────────────────────────
+  type AccountRow = { company: string; views: number; sessions_count: number; dwell_secs: number }
+  const accountsRes = await db.execute<AccountRow>(sql`
+    SELECT
+      s.device_json->>'company'                                      AS company,
+      COUNT(CASE WHEN e.event_type = 'view' THEN 1 END)::int        AS views,
+      COUNT(DISTINCT s.id)::int                                      AS sessions_count,
+      (COUNT(CASE WHEN e.event_type = 'dwell_tick' THEN 1 END) * 10)::int AS dwell_secs
+    FROM sessions s
+    JOIN engagements e ON e.session_id = s.id ${dateFilter}
+    JOIN assets a ON a.id = e.asset_id
+    WHERE a.organization_id = ${orgId}::uuid
+      AND s.device_json->>'company' IS NOT NULL
+      AND s.device_json->>'company' <> ''
+    GROUP BY company
+    ORDER BY dwell_secs DESC
+    LIMIT 10
+  `)
+  const topAccounts = accountsRes.rows
+
+  // ── 6. Top visitors ───────────────────────────────────────────────────────
+  type VisitorRow = { visitor_id: string; identifier: string; views: number; sessions_count: number; dwell_secs: number }
+  const visitorsRes2 = await db.execute<VisitorRow>(sql`
+    SELECT
+      v.id AS visitor_id,
+      COALESCE(MAX(l.email), v.captured_email, 'Visitor #' || SUBSTRING(v.id::text, 1, 8)) AS identifier,
+      COUNT(CASE WHEN e.event_type = 'view' THEN 1 END)::int        AS views,
+      COUNT(DISTINCT s.id)::int                                      AS sessions_count,
+      (COUNT(CASE WHEN e.event_type = 'dwell_tick' THEN 1 END) * 10)::int AS dwell_secs
+    FROM visitors v
+    JOIN sessions s ON s.visitor_id = v.id
+    JOIN engagements e ON e.session_id = s.id ${dateFilter}
+    JOIN assets a ON a.id = e.asset_id
+    LEFT JOIN leads l ON l.visitor_id = v.id
+    WHERE a.organization_id = ${orgId}::uuid
+    GROUP BY v.id, v.captured_email
+    ORDER BY dwell_secs DESC
+    LIMIT 10
+  `)
+  const topVisitors = visitorsRes2.rows
+
   const rangeLabel = sp.from || sp.to
     ? [sp.from, sp.to].filter(Boolean).join(' → ')
     : 'All time'
+
+  // ── Shared table styles ────────────────────────────────────────────────────
+  const th = 'px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground'
+  const td = 'px-3 py-2.5 text-sm'
+  const tr = 'border-t border-border/60 hover:bg-muted/30 transition-colors'
 
   return (
     <div className="space-y-6">
@@ -143,7 +250,160 @@ export default async function AnalyticsDashboard({
         </Card>
       </div>
 
-      {/* Charts */}
+      {/* Row 1: Top Visitors + Top Accounts */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Top Visitors */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Top Visitors</CardTitle>
+            <p className="text-xs text-muted-foreground">Sorted by total view time</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            {topVisitors.length === 0 ? (
+              <p className="text-sm text-muted-foreground px-4 py-6">No data yet.</p>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className={`${th} pl-4 w-[40%]`}>#&nbsp;&nbsp;Visitor</th>
+                    <th className={`${th} text-right`}>Views</th>
+                    <th className={`${th} text-right`}>Sessions</th>
+                    <th className={`${th} text-right pr-4`}>View Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topVisitors.map((v, i) => (
+                    <tr key={v.visitor_id} className={tr}>
+                      <td className={`${td} pl-4 font-medium truncate max-w-[180px]`}>
+                        <span className="text-muted-foreground mr-2">{i + 1}</span>
+                        {v.identifier}
+                      </td>
+                      <td className={`${td} text-right tabular-nums`}>{v.views}</td>
+                      <td className={`${td} text-right tabular-nums`}>{v.sessions_count}</td>
+                      <td className={`${td} text-right tabular-nums pr-4`}>{fmtHMS(v.dwell_secs)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top Accounts */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Top Accounts</CardTitle>
+            <p className="text-xs text-muted-foreground">By company detected via IP</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            {topAccounts.length === 0 ? (
+              <p className="text-sm text-muted-foreground px-4 py-6">No company data yet — geo lookup populates this.</p>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className={`${th} pl-4 w-[40%]`}>#&nbsp;&nbsp;Account</th>
+                    <th className={`${th} text-right`}>Views</th>
+                    <th className={`${th} text-right`}>Sessions</th>
+                    <th className={`${th} text-right pr-4`}>View Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topAccounts.map((a, i) => (
+                    <tr key={a.company} className={tr}>
+                      <td className={`${td} pl-4 font-medium truncate max-w-[180px]`}>
+                        <span className="text-muted-foreground mr-2">{i + 1}</span>
+                        {a.company}
+                      </td>
+                      <td className={`${td} text-right tabular-nums`}>{a.views}</td>
+                      <td className={`${td} text-right tabular-nums`}>{a.sessions_count}</td>
+                      <td className={`${td} text-right tabular-nums pr-4`}>{fmtHMS(a.dwell_secs)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 2: Top 5 by Engagement Time + Top 5 by Binge Rate */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Top 5 by Engagement Time */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Top 5 Content by Engagement Time</CardTitle>
+            <p className="text-xs text-muted-foreground">Total dwell time across all sessions</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            {topByDwell.length === 0 ? (
+              <p className="text-sm text-muted-foreground px-4 py-6">No engagement data yet.</p>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className={`${th} pl-4`}>#&nbsp;&nbsp;Asset</th>
+                    <th className={`${th} text-right pr-4`}>Total View Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topByDwell.map((a, i) => (
+                    <tr key={a.asset_id} className={tr}>
+                      <td className={`${td} pl-4 font-medium`}>
+                        <span className="text-muted-foreground mr-2">{i + 1}</span>
+                        <span className="truncate">{a.title}</span>
+                      </td>
+                      <td className={`${td} text-right tabular-nums pr-4 font-medium text-primary`}>
+                        {fmtHMS(a.dwell_secs)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top 5 by Binge Rate */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Top 5 Content by Binge Rate</CardTitle>
+            <p className="text-xs text-muted-foreground">% of sessions that consumed multiple assets</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            {topByBinge.length === 0 ? (
+              <p className="text-sm text-muted-foreground px-4 py-6">No multi-asset sessions yet.</p>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className={`${th} pl-4`}>#&nbsp;&nbsp;Asset</th>
+                    <th className={`${th} text-right pr-4`}>Binge Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topByBinge.map((a, i) => (
+                    <tr key={a.asset_id} className={tr}>
+                      <td className={`${td} pl-4`}>
+                        <span className="text-muted-foreground mr-2">{i + 1}</span>
+                        <span className="font-medium truncate">{a.title}</span>
+                        <span className="text-xs text-muted-foreground ml-1">({a.total_sessions} sess.)</span>
+                      </td>
+                      <td className={`${td} text-right pr-4 font-semibold tabular-nums`}>
+                        <span className={a.binge_rate >= 80 ? 'text-green-600' : a.binge_rate >= 50 ? 'text-yellow-600' : 'text-muted-foreground'}>
+                          {a.binge_rate}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 3: Funnel + Top Performing Assets (existing) */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
@@ -159,7 +419,7 @@ export default async function AnalyticsDashboard({
             <CardTitle>Top Performing Assets</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-6">
+            <div className="space-y-4">
               {topAssets.map(asset => (
                 <div key={asset.assetId} className="flex items-center gap-4">
                   <div className="space-y-1 min-w-0 flex-1">
