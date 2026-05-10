@@ -157,23 +157,42 @@ export default async function AnalyticsDashboard({
   `)
   const topByBinge = Array.from(bingeRes) as BingeRow[]
 
-  // ── 5. Top accounts ───────────────────────────────────────────────────────
-  type AccountRow = { company: string; views: number; sessions_count: number; dwell_secs: number }
+  // ── 5. Top accounts — merged lead-form company + IP geo ──────────────────
+  // Priority: lead form 'company' field > IP geo company on the session.
+  // Contacts = distinct captured emails from that company.
+  type AccountRow = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
   const accountsRes = await db.execute<AccountRow>(sql`
+    WITH visitor_company AS (
+      -- Per visitor: prefer the company they wrote in the lead form,
+      -- fall back to whatever IP geo resolved for any of their sessions.
+      SELECT
+        v.id AS visitor_id,
+        COALESCE(
+          MAX(NULLIF(TRIM(l.form_responses_json::jsonb->>'company'), '')),
+          MAX(NULLIF(s.device_json::jsonb->>'company', ''))
+        ) AS company,
+        MAX(l.email) AS email
+      FROM visitors v
+      LEFT JOIN sessions s ON s.visitor_id = v.id
+      LEFT JOIN leads    l ON l.visitor_id = v.id
+      GROUP BY v.id
+    )
     SELECT
-      s.device_json->>'company'                                      AS company,
-      COUNT(CASE WHEN e.event_type = 'view' THEN 1 END)::int        AS views,
-      COUNT(DISTINCT s.id)::int                                      AS sessions_count,
+      vc.company,
+      COUNT(DISTINCT CASE WHEN vc.email IS NOT NULL THEN vc.visitor_id END)::int AS contacts,
+      COUNT(CASE WHEN e.event_type = 'view'       THEN 1 END)::int AS views,
+      COUNT(DISTINCT s.id)::int                                     AS sessions_count,
       (COUNT(CASE WHEN e.event_type = 'dwell_tick' THEN 1 END) * 10)::int AS dwell_secs
-    FROM sessions s
+    FROM visitor_company vc
+    JOIN sessions    s ON s.visitor_id = vc.visitor_id
     JOIN engagements e ON e.session_id = s.id ${dateFilter}
-    JOIN assets a ON a.id = e.asset_id
+    JOIN assets      a ON a.id = e.asset_id
     WHERE a.organization_id = ${orgId}::uuid
-      AND s.device_json->>'company' IS NOT NULL
-      AND s.device_json->>'company' <> ''
-    GROUP BY company
-    ORDER BY dwell_secs DESC
-    LIMIT 10
+      AND vc.company IS NOT NULL
+      AND vc.company <> ''
+    GROUP BY vc.company
+    ORDER BY contacts DESC, dwell_secs DESC
+    LIMIT 20
   `)
   const topAccounts = Array.from(accountsRes) as AccountRow[]
 

@@ -6,7 +6,7 @@ import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 
 // ── Types (mirror page.tsx) ───────────────────────────────────────────────────
 export type VisitorRow  = { visitor_id: string; identifier: string; views: number; sessions_count: number; dwell_secs: number }
-export type AccountRow  = { company: string; views: number; sessions_count: number; dwell_secs: number }
+export type AccountRow  = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
 export type DwellRow    = { asset_id: string; title: string; dwell_secs: number; views: number }
 export type BingeRow    = { asset_id: string; title: string; total_sessions: number; binge_sessions: number; binge_rate: number }
 
@@ -99,13 +99,14 @@ export function TopVisitorsTable({ rows }: { rows: VisitorRow[] }) {
 
 // ── Top Accounts ──────────────────────────────────────────────────────────────
 export function TopAccountsTable({ rows }: { rows: AccountRow[] }) {
-  const { sorted, sortCol, sortDir, toggle } = useSortedRows(rows, 'dwell_secs')
-  if (!rows.length) return <p className="text-sm text-muted-foreground px-4 py-6">No company data yet — geo lookup populates this.</p>
+  const { sorted, sortCol, sortDir, toggle } = useSortedRows(rows, 'contacts')
+  if (!rows.length) return <p className="text-sm text-muted-foreground px-4 py-6">No company data yet — fill the lead form to populate this.</p>
   return (
     <table className="w-full">
       <thead>
         <tr>
-          <th className={`${thBase} text-left pl-4 w-[40%]`}>#&nbsp;&nbsp;Account</th>
+          <th className={`${thBase} text-left pl-4 w-[35%]`}>#&nbsp;&nbsp;Account</th>
+          <Th label="Contacts"  col="contacts"       sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
           <Th label="Views"     col="views"          sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
           <Th label="Sessions"  col="sessions_count" sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
           <Th label="View Time" col="dwell_secs"     sortCol={sortCol} sortDir={sortDir} onSort={toggle} right className="pr-4" />
@@ -114,9 +115,14 @@ export function TopAccountsTable({ rows }: { rows: AccountRow[] }) {
       <tbody>
         {sorted.map((a, i) => (
           <tr key={a.company} className={trBase}>
-            <td className={`${tdBase} pl-4 font-medium truncate max-w-[180px]`}>
+            <td className={`${tdBase} pl-4 font-medium truncate max-w-[160px]`}>
               <span className="text-muted-foreground mr-2">{i + 1}</span>
               {a.company}
+            </td>
+            <td className={`${tdBase} text-right tabular-nums`}>
+              {a.contacts > 0
+                ? <span className="inline-flex items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold px-2 py-0.5 min-w-[1.5rem]">{a.contacts}</span>
+                : <span className="text-muted-foreground">—</span>}
             </td>
             <td className={`${tdBase} text-right tabular-nums`}>{a.views}</td>
             <td className={`${tdBase} text-right tabular-nums`}>{a.sessions_count}</td>
@@ -213,7 +219,7 @@ export function AnalyticsTables({ visitors, accounts, dwell, binge }: {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Top Accounts</CardTitle>
-            <p className="text-xs text-muted-foreground">By company detected via IP · click to sort</p>
+            <p className="text-xs text-muted-foreground">Lead form + IP geo · contacts = captured emails · click to sort</p>
           </CardHeader>
           <CardContent className="p-0">
             <TopAccountsTable rows={accounts} />
