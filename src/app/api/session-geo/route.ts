@@ -34,26 +34,29 @@ export async function POST(req: Request) {
     const session = rows[0]
     const existing = (session.deviceJson ?? {}) as Record<string, string | null>
 
-    // Already have geo — nothing to do
-    if (existing.country || existing.city) {
-      return NextResponse.json({
-        ok: true, source: 'existing',
-        country: existing.country, city: existing.city, company: existing.company,
-      })
-    }
-
     let country: string | null = null
     let city:    string | null = null
     let company: string | null = null
     let source = 'server-lookup'
 
-    // Prefer client-resolved geo (visitor's own IP → no shared quota)
+    // Client-provided geo always wins — it uses the visitor's real IP, not
+    // Netlify's server IP. Even if we already stored server-resolved geo
+    // (e.g. Singapore from a Netlify edge node), overwrite it with the truth.
     if (bodyCountry || bodyCity) {
       country = bodyCountry ?? null
       city    = bodyCity    ?? null
       company = bodyCompany ?? null
       source  = 'client'
     } else {
+      // Server-side fallback: only run if we have nothing stored yet.
+      // This avoids overwriting a previous client-resolved value with the
+      // wrong Netlify infrastructure IP.
+      if (existing.country || existing.city) {
+        return NextResponse.json({
+          ok: true, source: 'existing',
+          country: existing.country, city: existing.city, company: existing.company,
+        })
+      }
       // Fallback: resolve from server-side request headers
       const reqHeaders = await headers()
       const rawIp =
