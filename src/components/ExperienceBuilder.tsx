@@ -236,7 +236,7 @@ export function ExperienceBuilder({
                     : 'Drag and drop banner image, or click to upload'}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Supports JPG, PNG, WebP. Recommended size: 1440 × 700.</p>
+              <p className="text-xs text-muted-foreground mt-1">Supports JPG, PNG, WebP. Recommended size: 1440 × 550.</p>
             </div>
             {uploadError && <p className="text-xs text-destructive mt-1">{uploadError}</p>}
           </div>
