@@ -37,11 +37,19 @@ export async function generateMetadata({
 }
 
 export default async function PublicTrackPage({
-  params
+  params,
+  searchParams,
 }: {
   params: Promise<{ orgSlug: string, trackSlug: string }>
+  searchParams: Promise<{ asset?: string; assetId?: string }>
 }) {
-  const { orgSlug, trackSlug } = await params;
+  const { orgSlug, trackSlug } = await params
+  const sp = await searchParams
+  // ?asset=2  → 1-based position (human-friendly)
+  // ?assetId=uuid → direct asset ID lookup (used by ExperienceViewer)
+  // Both are resolved to a 0-based index, clamped after assets are loaded.
+  const requestedAssetPosition = sp.asset ? Math.max(1, parseInt(sp.asset, 10)) - 1 : null
+  const requestedAssetId = sp.assetId ?? null
 
   // Fetch org
   const orgs = await db.select().from(organizations).where(eq(organizations.slug, orgSlug))
@@ -159,6 +167,16 @@ export default async function PublicTrackPage({
         returningVisitorName={returningVisitorName}
         returningVisitorCompany={returningVisitorCompany}
         isKnownVisitor={isKnownVisitor}
+        initialAssetIndex={(() => {
+          if (requestedAssetId) {
+            const idx = sortedAssets.findIndex(a => a.id === requestedAssetId)
+            return idx >= 0 ? idx : 0
+          }
+          if (requestedAssetPosition !== null) {
+            return Math.min(requestedAssetPosition, Math.max(0, sortedAssets.length - 1))
+          }
+          return 0
+        })()}
       />
     </div>
   )

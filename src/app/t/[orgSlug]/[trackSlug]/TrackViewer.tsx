@@ -26,6 +26,7 @@ type TrackViewerProps = {
   returningVisitorName?: string | null
   returningVisitorCompany?: string | null
   isKnownVisitor?: boolean
+  initialAssetIndex?: number
 }
 
 export default function TrackViewer({
@@ -37,6 +38,7 @@ export default function TrackViewer({
   returningVisitorName,
   returningVisitorCompany,
   isKnownVisitor = false,
+  initialAssetIndex = 0,
 }: TrackViewerProps) {
   function extractTags(metadataJson: unknown): string[] {
     if (!metadataJson || typeof metadataJson !== 'object') return []
@@ -46,7 +48,7 @@ export default function TrackViewer({
   }
 
   const layout: 'binge' | 'hub' | 'single' = track.layout ?? 'binge'
-  const [currentAssetIndex, setCurrentAssetIndex] = useState(0)
+  const [currentAssetIndex, setCurrentAssetIndex] = useState(initialAssetIndex)
   const effectiveIndex = layout === 'single' ? 0 : currentAssetIndex
   const currentAsset = assets[effectiveIndex]
   const [trackingInitialized, setTrackingInitialized] = useState(false)
