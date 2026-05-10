@@ -23,6 +23,50 @@ function fmtHMS(secs: number): string {
   return [h, m, s].map(v => String(v).padStart(2, '0')).join(':')
 }
 
+// ── Company fuzzy-merge helpers ───────────────────────────────────────────────
+const CORP_SUFFIXES = /\b(s\.?r\.?l\.?|s\.?a\.?s?\.?|s\.?p\.?a\.?|llc|llp|ltd|limited|inc|incorporated|corp|corporation|co\.?|gmbh|ag|bv|nv|pty|plc|lp|pvt|sdn\s*bhd)\b\.?/gi
+
+function normCo(name: string): string {
+  return name.toLowerCase().replace(CORP_SUFFIXES, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+function tokenize(name: string): string[] {
+  return normCo(name).split(' ').filter(t => t.length > 1 && !['of','the','and','de','la','le'].includes(t))
+}
+function coSimilarity(a: string, b: string): number {
+  const ta = tokenize(a), tb = tokenize(b)
+  if (!ta.length || !tb.length) return 0
+  const [shorter, longer] = ta.length <= tb.length ? [ta, tb] : [tb, ta]
+  const longerSet = new Set(longer)
+  return shorter.filter(t => longerSet.has(t)).length / shorter.length
+}
+
+type AccountRaw = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
+
+/** Cluster rows with similar company names, canonical = heaviest by dwell_secs */
+function mergeAccounts(rows: AccountRaw[], threshold = 0.75): AccountRaw[] {
+  const clusters: AccountRaw[][] = []
+
+  for (const row of rows) {
+    const match = clusters.find(c =>
+      coSimilarity(row.company, c[0].company) >= threshold
+    )
+    if (match) match.push(row)
+    else clusters.push([row])
+  }
+
+  return clusters.map(cluster => {
+    // canonical name = entry with most dwell time
+    const canonical = cluster.reduce((best, r) => r.dwell_secs > best.dwell_secs ? r : best)
+    return {
+      company:        canonical.company,
+      contacts:       cluster.reduce((s, r) => s + r.contacts,       0),
+      views:          cluster.reduce((s, r) => s + r.views,          0),
+      sessions_count: cluster.reduce((s, r) => s + r.sessions_count, 0),
+      dwell_secs:     cluster.reduce((s, r) => s + r.dwell_secs,     0),
+    }
+  })
+}
+
 function parseDateParam(val: string | undefined, endOfDay = false): Date | null {
   if (!val) return null
   const d = new Date(val)
@@ -160,8 +204,7 @@ export default async function AnalyticsDashboard({
   // ── 5. Top accounts — merged lead-form company + IP geo ──────────────────
   // Priority: lead form 'company' field > IP geo company on the session.
   // Contacts = distinct captured emails from that company.
-  type AccountRow = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
-  const accountsRes = await db.execute<AccountRow>(sql`
+  const accountsRes = await db.execute<AccountRaw>(sql`
     WITH visitor_company AS (
       -- Per visitor: prefer the company they wrote in the lead form,
       -- fall back to whatever IP geo resolved for any of their sessions.
@@ -192,9 +235,11 @@ export default async function AnalyticsDashboard({
       AND vc.company <> ''
     GROUP BY vc.company
     ORDER BY contacts DESC, dwell_secs DESC
-    LIMIT 20
+    LIMIT 50
   `)
-  const topAccounts = Array.from(accountsRes) as AccountRow[]
+  const topAccounts = mergeAccounts(Array.from(accountsRes) as AccountRaw[])
+    .sort((a, b) => b.contacts - a.contacts || b.dwell_secs - a.dwell_secs)
+    .slice(0, 20)
 
   // ── 6. Top visitors ───────────────────────────────────────────────────────
   type VisitorRow = { visitor_id: string; identifier: string; views: number; sessions_count: number; dwell_secs: number }
