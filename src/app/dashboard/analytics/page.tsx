@@ -123,7 +123,7 @@ export default async function AnalyticsDashboard({
     ORDER BY dwell_secs DESC
     LIMIT 5
   `)
-  const topByDwell = dwellRes.rows
+  const topByDwell = Array.from(dwellRes) as DwellRow[]
 
   // ── 4. Top 5 by content binge rate ────────────────────────────────────────
   type BingeRow = { asset_id: string; title: string; total_sessions: number; binge_sessions: number; binge_rate: number }
@@ -154,7 +154,7 @@ export default async function AnalyticsDashboard({
     ORDER BY binge_rate DESC, total_sessions DESC
     LIMIT 5
   `)
-  const topByBinge = bingeRes.rows
+  const topByBinge = Array.from(bingeRes) as BingeRow[]
 
   // ── 5. Top accounts ───────────────────────────────────────────────────────
   type AccountRow = { company: string; views: number; sessions_count: number; dwell_secs: number }
@@ -174,7 +174,7 @@ export default async function AnalyticsDashboard({
     ORDER BY dwell_secs DESC
     LIMIT 10
   `)
-  const topAccounts = accountsRes.rows
+  const topAccounts = Array.from(accountsRes) as AccountRow[]
 
   // ── 6. Top visitors ───────────────────────────────────────────────────────
   type VisitorRow = { visitor_id: string; identifier: string; views: number; sessions_count: number; dwell_secs: number }
@@ -195,7 +195,7 @@ export default async function AnalyticsDashboard({
     ORDER BY dwell_secs DESC
     LIMIT 10
   `)
-  const topVisitors = visitorsRes2.rows
+  const topVisitors = Array.from(visitorsRes2) as VisitorRow[]
 
   const rangeLabel = sp.from || sp.to
     ? [sp.from, sp.to].filter(Boolean).join(' → ')
@@ -272,7 +272,7 @@ export default async function AnalyticsDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {topVisitors.map((v, i) => (
+                  {topVisitors.map((v: VisitorRow, i: number) => (
                     <tr key={v.visitor_id} className={tr}>
                       <td className={`${td} pl-4 font-medium truncate max-w-[180px]`}>
                         <span className="text-muted-foreground mr-2">{i + 1}</span>
@@ -309,7 +309,7 @@ export default async function AnalyticsDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {topAccounts.map((a, i) => (
+                  {topAccounts.map((a: AccountRow, i: number) => (
                     <tr key={a.company} className={tr}>
                       <td className={`${td} pl-4 font-medium truncate max-w-[180px]`}>
                         <span className="text-muted-foreground mr-2">{i + 1}</span>
@@ -347,7 +347,7 @@ export default async function AnalyticsDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {topByDwell.map((a, i) => (
+                  {topByDwell.map((a: DwellRow, i: number) => (
                     <tr key={a.asset_id} className={tr}>
                       <td className={`${td} pl-4 font-medium`}>
                         <span className="text-muted-foreground mr-2">{i + 1}</span>
@@ -382,7 +382,7 @@ export default async function AnalyticsDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {topByBinge.map((a, i) => (
+                  {topByBinge.map((a: BingeRow, i: number) => (
                     <tr key={a.asset_id} className={tr}>
                       <td className={`${td} pl-4`}>
                         <span className="text-muted-foreground mr-2">{i + 1}</span>
