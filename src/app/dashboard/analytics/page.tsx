@@ -3,6 +3,7 @@ import { engagements, sessions, visitors, assets, leads } from '@/db/schema'
 import { eq, count, sql, desc, inArray, and, gte, lte } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AnalyticsCharts from './AnalyticsCharts'
+import { AnalyticsTables } from './SortableAnalyticsTables'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 import { DateRangeFilter } from './DateRangeFilter'
 import { Suspense } from 'react'
@@ -201,11 +202,6 @@ export default async function AnalyticsDashboard({
     ? [sp.from, sp.to].filter(Boolean).join(' → ')
     : 'All time'
 
-  // ── Shared table styles ────────────────────────────────────────────────────
-  const th = 'px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground'
-  const td = 'px-3 py-2.5 text-sm'
-  const tr = 'border-t border-border/60 hover:bg-muted/30 transition-colors'
-
   return (
     <div className="space-y-6">
       {/* Header + filter */}
@@ -250,158 +246,12 @@ export default async function AnalyticsDashboard({
         </Card>
       </div>
 
-      {/* Row 1: Top Visitors + Top Accounts */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Top Visitors */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top Visitors</CardTitle>
-            <p className="text-xs text-muted-foreground">Sorted by total view time</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topVisitors.length === 0 ? (
-              <p className="text-sm text-muted-foreground px-4 py-6">No data yet.</p>
-            ) : (
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className={`${th} pl-4 w-[40%]`}>#&nbsp;&nbsp;Visitor</th>
-                    <th className={`${th} text-right`}>Views</th>
-                    <th className={`${th} text-right`}>Sessions</th>
-                    <th className={`${th} text-right pr-4`}>View Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topVisitors.map((v: VisitorRow, i: number) => (
-                    <tr key={v.visitor_id} className={tr}>
-                      <td className={`${td} pl-4 font-medium truncate max-w-[180px]`}>
-                        <span className="text-muted-foreground mr-2">{i + 1}</span>
-                        {v.identifier}
-                      </td>
-                      <td className={`${td} text-right tabular-nums`}>{v.views}</td>
-                      <td className={`${td} text-right tabular-nums`}>{v.sessions_count}</td>
-                      <td className={`${td} text-right tabular-nums pr-4`}>{fmtHMS(v.dwell_secs)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Top Accounts */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top Accounts</CardTitle>
-            <p className="text-xs text-muted-foreground">By company detected via IP</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topAccounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground px-4 py-6">No company data yet — geo lookup populates this.</p>
-            ) : (
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className={`${th} pl-4 w-[40%]`}>#&nbsp;&nbsp;Account</th>
-                    <th className={`${th} text-right`}>Views</th>
-                    <th className={`${th} text-right`}>Sessions</th>
-                    <th className={`${th} text-right pr-4`}>View Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topAccounts.map((a: AccountRow, i: number) => (
-                    <tr key={a.company} className={tr}>
-                      <td className={`${td} pl-4 font-medium truncate max-w-[180px]`}>
-                        <span className="text-muted-foreground mr-2">{i + 1}</span>
-                        {a.company}
-                      </td>
-                      <td className={`${td} text-right tabular-nums`}>{a.views}</td>
-                      <td className={`${td} text-right tabular-nums`}>{a.sessions_count}</td>
-                      <td className={`${td} text-right tabular-nums pr-4`}>{fmtHMS(a.dwell_secs)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Row 2: Top 5 by Engagement Time + Top 5 by Binge Rate */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Top 5 by Engagement Time */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top 5 Content by Engagement Time</CardTitle>
-            <p className="text-xs text-muted-foreground">Total dwell time across all sessions</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topByDwell.length === 0 ? (
-              <p className="text-sm text-muted-foreground px-4 py-6">No engagement data yet.</p>
-            ) : (
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className={`${th} pl-4`}>#&nbsp;&nbsp;Asset</th>
-                    <th className={`${th} text-right pr-4`}>Total View Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topByDwell.map((a: DwellRow, i: number) => (
-                    <tr key={a.asset_id} className={tr}>
-                      <td className={`${td} pl-4 font-medium`}>
-                        <span className="text-muted-foreground mr-2">{i + 1}</span>
-                        <span className="truncate">{a.title}</span>
-                      </td>
-                      <td className={`${td} text-right tabular-nums pr-4 font-medium text-primary`}>
-                        {fmtHMS(a.dwell_secs)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Top 5 by Binge Rate */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top 5 Content by Binge Rate</CardTitle>
-            <p className="text-xs text-muted-foreground">% of sessions that consumed multiple assets</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topByBinge.length === 0 ? (
-              <p className="text-sm text-muted-foreground px-4 py-6">No multi-asset sessions yet.</p>
-            ) : (
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className={`${th} pl-4`}>#&nbsp;&nbsp;Asset</th>
-                    <th className={`${th} text-right pr-4`}>Binge Rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topByBinge.map((a: BingeRow, i: number) => (
-                    <tr key={a.asset_id} className={tr}>
-                      <td className={`${td} pl-4`}>
-                        <span className="text-muted-foreground mr-2">{i + 1}</span>
-                        <span className="font-medium truncate">{a.title}</span>
-                        <span className="text-xs text-muted-foreground ml-1">({a.total_sessions} sess.)</span>
-                      </td>
-                      <td className={`${td} text-right pr-4 font-semibold tabular-nums`}>
-                        <span className={a.binge_rate >= 80 ? 'text-green-600' : a.binge_rate >= 50 ? 'text-yellow-600' : 'text-muted-foreground'}>
-                          {a.binge_rate}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <AnalyticsTables
+        visitors={topVisitors}
+        accounts={topAccounts}
+        dwell={topByDwell}
+        binge={topByBinge}
+      />
 
       {/* Row 3: Funnel + Top Performing Assets (existing) */}
       <div className="grid gap-4 md:grid-cols-2">
