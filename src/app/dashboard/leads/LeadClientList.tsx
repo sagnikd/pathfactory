@@ -95,7 +95,15 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
     URL.revokeObjectURL(url)
   }
 
-  const selectedTimeline = selectedVisitorId ? timelines[selectedVisitorId] || [] : []
+  const selectedTimeline = selectedVisitorId
+    ? (timelines[selectedVisitorId] || [])
+        .filter((event: any) => !String(event.eventType).toLowerCase().includes('dwell'))
+        .filter(
+          (event: any, idx: number, arr: any[]) =>
+            arr.findIndex((e) => e.assetId === event.assetId && e.sessionId === event.sessionId) === idx
+        )
+        .sort((a: any, b: any) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+    : []
 
   return (
     <>

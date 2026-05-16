@@ -1,6 +1,6 @@
 import { db } from '@/db'
 import { leads, visitors, sessions, engagements, assets, tracks } from '@/db/schema'
-import { eq, inArray, desc, and, count } from 'drizzle-orm'
+import { eq, inArray, desc, asc, and, ne, count } from 'drizzle-orm'
 import LeadClientList from './LeadClientList'
 import { computeLeadScores } from '@/lib/leadScore'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
@@ -36,9 +36,21 @@ export default async function LeadsPage() {
   const liveScores = await computeLeadScores(validVisitorIds)
 
   // Fetch timeline data for these valid leads
+  // Fetch (sessionId, assetId) pairs where visitor actually dwelled
+  const dwelledPairs = await db.selectDistinct({
+    sessionId: engagements.sessionId,
+    assetId: engagements.assetId,
+  })
+  .from(engagements)
+  .innerJoin(sessions, eq(engagements.sessionId, sessions.id))
+  .where(and(inArray(sessions.visitorId, validVisitorIds), eq(engagements.eventType, 'dwell_tick')))
+
+  const dwelledSet = new Set(dwelledPairs.map((p) => `${p.sessionId}:${p.assetId}`))
+
   const timelineData = await db.select({
     visitorId: visitors.id,
     sessionId: sessions.id,
+    assetId: engagements.assetId,
     eventType: engagements.eventType,
     ts: engagements.ts,
     assetTitle: assets.title
@@ -47,12 +59,13 @@ export default async function LeadsPage() {
   .innerJoin(sessions, eq(visitors.id, sessions.visitorId))
   .innerJoin(engagements, eq(sessions.id, engagements.sessionId))
   .innerJoin(assets, eq(engagements.assetId, assets.id))
-  .where(inArray(visitors.id, validVisitorIds))
-  .orderBy(desc(engagements.ts))
+  .where(and(inArray(visitors.id, validVisitorIds), ne(engagements.eventType, 'dwell_tick')))
+  .orderBy(asc(engagements.ts))
 
-  // Group timeline by visitor
+  // Group timeline by visitor — only assets visitor dwelled on (no hurried clicks)
   const timelinesByVisitor: Record<string, typeof timelineData> = {}
   for (const event of timelineData) {
+    if (!dwelledSet.has(`${event.sessionId}:${event.assetId}`)) continue
     if (!timelinesByVisitor[event.visitorId]) {
       timelinesByVisitor[event.visitorId] = []
     }
