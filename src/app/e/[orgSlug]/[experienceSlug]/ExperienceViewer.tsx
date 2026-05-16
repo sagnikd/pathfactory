@@ -66,7 +66,7 @@ export default function ExperienceViewer({
   const availableTags = useMemo(() => {
     const tagCounts = new Map<string, number>()
     for (const a of allAssets) {
-      for (const t of a.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1)
+      for (const t of new Set(a.tags)) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1)
     }
     return Array.from(tagCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 20)
   }, [allAssets])
@@ -178,6 +178,7 @@ export default function ExperienceViewer({
                   <div className="space-y-2">
                     {(['video', 'article', 'pdf', 'image'] as const).map((type) => {
                       const count = allAssets.filter((a) => a.type === type).length
+                      if (count === 0) return null
                       const active = selectedTypes.includes(type)
                       return (
                         <button
@@ -254,7 +255,7 @@ export default function ExperienceViewer({
                           <div className="p-3 space-y-2">
                             <p className="text-sm font-medium line-clamp-2">{asset.title}</p>
                             <div className="flex flex-wrap gap-1">
-                              {(asset.tags.length > 0 ? asset.tags.slice(0, 3) : [asset.type.toUpperCase()]).map((tag) => (
+                              {(asset.tags.length > 0 ? [...new Set(asset.tags)].slice(0, 3) : [asset.type.toUpperCase()]).map((tag) => (
                                 <span
                                   key={tag}
                                   className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold ${

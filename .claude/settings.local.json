@@ -10,7 +10,14 @@
       "mcp__plugin_context-mode_context-mode__ctx_execute",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(npm install *)",
+      "Bash(npm list *)",
+      "Bash(node --input-type=module)",
+      "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
+      "Bash(curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh)",
+      "Bash(bash)",
+      "Bash(cat /private/tmp/claude-501/-Users-sagnikdatta-Library-CloudStorage-OneDrive-iiitb.net-25q3-datascience-pathfactory/70da2198-1c02-4f6f-9ea6-3cfb1d89f78d/tasks/by3tqrpzu.output)"
     ]
   }
 }

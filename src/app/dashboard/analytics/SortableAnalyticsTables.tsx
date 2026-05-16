@@ -5,10 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 
 // ── Types (mirror page.tsx) ───────────────────────────────────────────────────
-export type VisitorRow  = { visitor_id: string; identifier: string; views: number; sessions_count: number; dwell_secs: number }
-export type AccountRow  = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
-export type DwellRow    = { asset_id: string; title: string; dwell_secs: number; views: number }
-export type BingeRow    = { asset_id: string; title: string; total_sessions: number; binge_sessions: number; binge_rate: number }
+export type VisitorRow      = { visitor_id: string; identifier: string; views: number; sessions_count: number; dwell_secs: number }
+export type AccountRow      = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
+export type DwellRow        = { asset_id: string; title: string; dwell_secs: number; views: number }
+export type BingeRow        = { asset_id: string; title: string; total_sessions: number; binge_sessions: number; binge_rate: number }
+export type TrackStatRow    = { track_id: string; title: string; slug: string; layout: string; sessions_count: number; unique_visitors: number; total_dwell_secs: number; views: number }
+export type ExperienceStatRow = { track_id: string; title: string; track_count: number; sessions_count: number; unique_visitors: number; total_dwell_secs: number; views: number }
 
 function fmtHMS(secs: number): string {
   const h = Math.floor(secs / 3600)
@@ -189,6 +191,87 @@ export function TopBingeTable({ rows }: { rows: BingeRow[] }) {
                 {a.binge_rate}%
               </span>
             </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+// ── Track Performance ─────────────────────────────────────────────────────────
+const layoutColors: Record<string, string> = {
+  binge:  'border-primary/40 text-primary bg-primary/5',
+  hub:    'border-orange-300 text-orange-700 bg-orange-50',
+  single: 'border-border text-muted-foreground bg-muted/50',
+}
+
+export function TrackStatsTable({ rows }: { rows: TrackStatRow[] }) {
+  const { sorted, sortCol, sortDir, toggle } = useSortedRows(rows, 'sessions_count')
+  if (!rows.length) return <p className="text-sm text-muted-foreground px-4 py-6">No track data yet.</p>
+  return (
+    <table className="w-full">
+      <thead>
+        <tr>
+          <th className={`${thBase} text-left pl-4 w-[40%]`}>#&nbsp;&nbsp;Track</th>
+          <Th label="Sessions" col="sessions_count"  sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
+          <Th label="Visitors" col="unique_visitors"  sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
+          <Th label="Views"    col="views"            sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
+          <Th label="Dwell"    col="total_dwell_secs" sortCol={sortCol} sortDir={sortDir} onSort={toggle} right className="pr-4" />
+        </tr>
+      </thead>
+      <tbody>
+        {sorted.map((t, i) => (
+          <tr key={t.track_id} className={trBase}>
+            <td className={`${tdBase} pl-4`} style={{ maxWidth: 180 }}>
+              <div className="flex items-start gap-1.5 min-w-0">
+                <span className="text-muted-foreground shrink-0">{i + 1}</span>
+                <div className="min-w-0">
+                  <div className="font-medium text-sm truncate">{t.title}</div>
+                  <span className={`mt-0.5 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${layoutColors[t.layout] ?? layoutColors.single}`}>
+                    {t.layout}
+                  </span>
+                </div>
+              </div>
+            </td>
+            <td className={`${tdBase} text-right tabular-nums`}>{t.sessions_count}</td>
+            <td className={`${tdBase} text-right tabular-nums`}>{t.unique_visitors}</td>
+            <td className={`${tdBase} text-right tabular-nums`}>{t.views}</td>
+            <td className={`${tdBase} text-right tabular-nums pr-4 font-medium text-primary`}>{fmtHMS(t.total_dwell_secs)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+// ── Experience Performance ────────────────────────────────────────────────────
+export function ExperienceStatsTable({ rows }: { rows: ExperienceStatRow[] }) {
+  const { sorted, sortCol, sortDir, toggle } = useSortedRows(rows, 'sessions_count')
+  if (!rows.length) return <p className="text-sm text-muted-foreground px-4 py-6">No experience data yet.</p>
+  return (
+    <table className="w-full">
+      <thead>
+        <tr>
+          <th className={`${thBase} text-left pl-4 w-[38%]`}>#&nbsp;&nbsp;Experience</th>
+          <Th label="Tracks"   col="track_count"     sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
+          <Th label="Sessions" col="sessions_count"  sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
+          <Th label="Visitors" col="unique_visitors"  sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
+          <Th label="Dwell"    col="total_dwell_secs" sortCol={sortCol} sortDir={sortDir} onSort={toggle} right className="pr-4" />
+        </tr>
+      </thead>
+      <tbody>
+        {sorted.map((e, i) => (
+          <tr key={e.track_id} className={trBase}>
+            <td className={`${tdBase} pl-4 font-medium truncate max-w-[160px]`}>
+              <span className="text-muted-foreground mr-2">{i + 1}</span>
+              {e.title}
+            </td>
+            <td className={`${tdBase} text-right tabular-nums`}>
+              <span className="inline-flex items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold px-2 py-0.5 min-w-[1.5rem]">{e.track_count}</span>
+            </td>
+            <td className={`${tdBase} text-right tabular-nums`}>{e.sessions_count}</td>
+            <td className={`${tdBase} text-right tabular-nums`}>{e.unique_visitors}</td>
+            <td className={`${tdBase} text-right tabular-nums pr-4 font-medium text-primary`}>{fmtHMS(e.total_dwell_secs)}</td>
           </tr>
         ))}
       </tbody>

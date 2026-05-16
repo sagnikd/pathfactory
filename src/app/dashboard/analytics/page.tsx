@@ -3,7 +3,7 @@ import { engagements, sessions, visitors, assets, leads } from '@/db/schema'
 import { eq, count, sql, desc, inArray, and, gte, lte } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AnalyticsCharts from './AnalyticsCharts'
-import { AnalyticsTables } from './SortableAnalyticsTables'
+import { AnalyticsTables, TrackStatsTable, ExperienceStatsTable, type TrackStatRow, type ExperienceStatRow } from './SortableAnalyticsTables'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 import { DateRangeFilter } from './DateRangeFilter'
 import { Suspense } from 'react'
@@ -262,6 +262,88 @@ export default async function AnalyticsDashboard({
   `)
   const topVisitors = Array.from(visitorsRes2) as VisitorRow[]
 
+  // ── 7. Track & Experience performance ────────────────────────────────────────
+  // All tracks metadata (needed to detect experiences even if they have 0 sessions)
+  type TrackMeta = { track_id: string; title: string; slug: string; layout: string; theme_json_text: string }
+  const trackMetaRes = await db.execute<TrackMeta>(sql`
+    SELECT id AS track_id, title, slug, layout, theme_json::text AS theme_json_text
+    FROM tracks
+    WHERE organization_id = ${orgId}::uuid
+  `)
+  const allTrackMeta = Array.from(trackMetaRes) as TrackMeta[]
+
+  // Stats per track (only tracks with engagement in date range)
+  type TrackStatRaw = { track_id: string; sessions_count: number; unique_visitors: number; total_dwell_secs: number; views: number }
+  const trackStatRes = await db.execute<TrackStatRaw>(sql`
+    SELECT
+      s.track_id::text AS track_id,
+      COUNT(DISTINCT s.id)::int          AS sessions_count,
+      COUNT(DISTINCT s.visitor_id)::int  AS unique_visitors,
+      (COUNT(CASE WHEN e.event_type = 'dwell_tick' THEN 1 END) * 10)::int AS total_dwell_secs,
+      COUNT(CASE WHEN e.event_type = 'view' THEN 1 END)::int              AS views
+    FROM sessions s
+    JOIN tracks t      ON t.id = s.track_id AND t.organization_id = ${orgId}::uuid
+    JOIN engagements e ON e.session_id = s.id ${dateFilter}
+    GROUP BY s.track_id
+  `)
+  const trackStatMap = new Map(
+    (Array.from(trackStatRes) as TrackStatRaw[]).map(r => [r.track_id, r])
+  )
+
+  function parseSelectedIds(text: string): string[] {
+    try {
+      const j = JSON.parse(text || '{}')
+      return Array.isArray(j.selectedTrackIds)
+        ? j.selectedTrackIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+        : []
+    } catch { return [] }
+  }
+
+  // Build experience rows (parent tracks with selectedTrackIds)
+  const childTrackIdSet = new Set<string>()
+  const expRowsRaw: ExperienceStatRow[] = []
+  for (const meta of allTrackMeta) {
+    const childIds = parseSelectedIds(meta.theme_json_text)
+    if (childIds.length > 0) {
+      childIds.forEach(id => childTrackIdSet.add(id))
+      const children = childIds.map(id => trackStatMap.get(id)).filter((r): r is TrackStatRaw => !!r)
+      expRowsRaw.push({
+        track_id:         meta.track_id,
+        title:            meta.title,
+        track_count:      childIds.length,
+        sessions_count:   children.reduce((s, c) => s + c.sessions_count,   0),
+        unique_visitors:  children.reduce((s, c) => s + c.unique_visitors,  0),
+        total_dwell_secs: children.reduce((s, c) => s + c.total_dwell_secs, 0),
+        views:            children.reduce((s, c) => s + c.views,            0),
+      })
+    }
+  }
+  const experienceStats = expRowsRaw
+    .filter(e => e.sessions_count > 0)
+    .sort((a, b) => b.sessions_count - a.sessions_count)
+
+  // Regular tracks = not experience, not a child of an experience
+  const trackStats: TrackStatRow[] = allTrackMeta
+    .filter(meta => {
+      const childIds = parseSelectedIds(meta.theme_json_text)
+      return childIds.length === 0 && !childTrackIdSet.has(meta.track_id)
+    })
+    .map(meta => {
+      const s = trackStatMap.get(meta.track_id)
+      return {
+        track_id:         meta.track_id,
+        title:            meta.title,
+        slug:             meta.slug,
+        layout:           meta.layout,
+        sessions_count:   s?.sessions_count   ?? 0,
+        unique_visitors:  s?.unique_visitors  ?? 0,
+        total_dwell_secs: s?.total_dwell_secs ?? 0,
+        views:            s?.views            ?? 0,
+      }
+    })
+    .filter(t => t.sessions_count > 0)
+    .sort((a, b) => b.sessions_count - a.sessions_count)
+
   const rangeLabel = sp.from || sp.to
     ? [sp.from, sp.to].filter(Boolean).join(' → ')
     : 'All time'
@@ -317,7 +399,35 @@ export default async function AnalyticsDashboard({
         binge={topByBinge}
       />
 
-      {/* Row 3: Funnel + Top Performing Assets (existing) */}
+      {/* Row 3: Track + Experience performance */}
+      {(trackStats.length > 0 || experienceStats.length > 0) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {trackStats.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Track Performance</CardTitle>
+                <p className="text-xs text-muted-foreground">Sessions, visitors & dwell per track · click to sort</p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <TrackStatsTable rows={trackStats} />
+              </CardContent>
+            </Card>
+          )}
+          {experienceStats.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Experience Performance</CardTitle>
+                <p className="text-xs text-muted-foreground">Aggregated across child tracks · click to sort</p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <ExperienceStatsTable rows={experienceStats} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Row 4: Funnel + Top Performing Assets (existing) */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
