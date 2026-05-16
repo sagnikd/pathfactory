@@ -213,7 +213,12 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
                     <p className="text-sm font-medium leading-snug">
                       <span className="capitalize">{event.eventType.replace('_', ' ')}</span> on <span className="font-semibold text-foreground/80">{event.assetTitle}</span>
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(event.ts), 'MMM d, h:mm a')}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {format(new Date(event.ts), 'MMM d, h:mm a')}
+                      {event.dwellSeconds > 0 && (
+                        <span className="ml-1.5 text-muted-foreground/70">({formatDwell(event.dwellSeconds)})</span>
+                      )}
+                    </p>
                   </div>
                 ))}
                 {selectedTimeline.length === 0 && <p className="text-sm text-muted-foreground">No events found.</p>}

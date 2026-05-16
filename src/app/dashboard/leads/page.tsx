@@ -1,6 +1,6 @@
 import { db } from '@/db'
 import { leads, visitors, sessions, engagements, assets, tracks } from '@/db/schema'
-import { eq, inArray, desc, asc, and, ne, count } from 'drizzle-orm'
+import { eq, inArray, desc, asc, and, ne, count, sql } from 'drizzle-orm'
 import LeadClientList from './LeadClientList'
 import { computeLeadScores } from '@/lib/leadScore'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
@@ -36,16 +36,19 @@ export default async function LeadsPage() {
   const liveScores = await computeLeadScores(validVisitorIds)
 
   // Fetch timeline data for these valid leads
-  // Fetch (sessionId, assetId) pairs where visitor actually dwelled
-  const dwelledPairs = await db.selectDistinct({
+  // Dwell tick counts per (sessionId, assetId) — each tick ≈ 10s
+  const dwelledPairs = await db.select({
     sessionId: engagements.sessionId,
     assetId: engagements.assetId,
+    ticks: count(),
   })
   .from(engagements)
   .innerJoin(sessions, eq(engagements.sessionId, sessions.id))
   .where(and(inArray(sessions.visitorId, validVisitorIds), eq(engagements.eventType, 'dwell_tick')))
+  .groupBy(engagements.sessionId, engagements.assetId)
 
-  const dwelledSet = new Set(dwelledPairs.map((p) => `${p.sessionId}:${p.assetId}`))
+  const dwelledMap = new Map(dwelledPairs.map((p) => [`${p.sessionId}:${p.assetId}`, p.ticks * 10]))
+  const dwelledSet = new Set(dwelledMap.keys())
 
   const timelineData = await db.select({
     visitorId: visitors.id,
@@ -63,13 +66,12 @@ export default async function LeadsPage() {
   .orderBy(asc(engagements.ts))
 
   // Group timeline by visitor — only assets visitor dwelled on (no hurried clicks)
-  const timelinesByVisitor: Record<string, typeof timelineData> = {}
+  const timelinesByVisitor: Record<string, (typeof timelineData[number] & { dwellSeconds: number })[]> = {}
   for (const event of timelineData) {
-    if (!dwelledSet.has(`${event.sessionId}:${event.assetId}`)) continue
-    if (!timelinesByVisitor[event.visitorId]) {
-      timelinesByVisitor[event.visitorId] = []
-    }
-    timelinesByVisitor[event.visitorId].push(event)
+    const key = `${event.sessionId}:${event.assetId}`
+    if (!dwelledSet.has(key)) continue
+    if (!timelinesByVisitor[event.visitorId]) timelinesByVisitor[event.visitorId] = []
+    timelinesByVisitor[event.visitorId].push({ ...event, dwellSeconds: dwelledMap.get(key) ?? 0 })
   }
 
   // ── Anonymous traffic ──────────────────────────────────────────────────
