@@ -70,22 +70,31 @@ export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }
   }
 
   // ── Dwell-time tracking ──────────────────────────────────────────────────
-  // Emit a `dwell_tick` every 10 s only while the page is both VISIBLE and
-  // FOCUSED.  Three signals can pause the ticker:
-  //   1. visibilitychange → hidden  (tab switch, minimize, screen lock)
-  //   2. window "blur"              (user switches to another app)
-  //   3. visibilitychange → visible but window still blurred (rare edge case)
+  // Emit a `dwell_tick` every 10 s only while ALL of:
+  //   1. Tab is visible (visibilitychange)
+  //   2. Window has focus (focus/blur)
+  //   3. Cursor is inside the browser viewport (mouseleave/mouseenter)
+  //   4. User was active within the last 60 s (idle detection)
   useEffect(() => {
     trackEvent({ sessionId, assetId: asset.id, eventType: 'view' })
 
+    const IDLE_MS = 15_000
     let tickInterval: ReturnType<typeof setInterval> | null = null
+    let cursorInPage = true
+    let lastActivity = Date.now()
+
+    const recordActivity = () => { lastActivity = Date.now() }
 
     const isActive = () =>
-      document.visibilityState === 'visible' && document.hasFocus()
+      document.visibilityState === 'visible' &&
+      document.hasFocus() &&
+      cursorInPage &&
+      Date.now() - lastActivity < IDLE_MS
 
     const startTicking = () => {
       if (tickInterval || !isActive()) return
       tickInterval = setInterval(() => {
+        if (!isActive()) { stopTicking(); return }
         trackEvent({ sessionId, assetId: asset.id, eventType: 'dwell_tick' })
       }, 10_000)
     }
@@ -96,36 +105,50 @@ export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }
 
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') stopTicking()
-      else startTicking()          // only starts if window also has focus
+      else startTicking()
     }
 
     const handleFocus = () => startTicking()
 
     const handleBlur = () => {
-      // When the user clicks into an iframe (video player, article embed) the
-      // parent window fires blur but the visitor is still actively watching.
-      // Use setTimeout(0) to let the browser update activeElement first, then
-      // only pause if focus truly left the page (not just moved to an iframe).
       setTimeout(() => {
         if (document.activeElement?.tagName === 'IFRAME') return
         stopTicking()
       }, 0)
     }
 
-    // Kick off only if already active on mount
+    const handleMouseLeave = () => { cursorInPage = false; stopTicking() }
+    const handleMouseEnter = () => { cursorInPage = true; recordActivity(); startTicking() }
+
+    // Resume after idle if user moves mouse / types
+    const handleActivity = () => {
+      recordActivity()
+      if (!tickInterval) startTicking()
+    }
+
     if (isActive()) startTicking()
 
     document.addEventListener('visibilitychange', handleVisibility)
-    window.addEventListener('focus', handleFocus)
-    window.addEventListener('blur',  handleBlur)
+    window.addEventListener('focus',     handleFocus)
+    window.addEventListener('blur',      handleBlur)
+    document.addEventListener('mouseleave', handleMouseLeave)
+    document.addEventListener('mouseenter', handleMouseEnter)
+    document.addEventListener('mousemove',  handleActivity)
+    document.addEventListener('keydown',    handleActivity)
+    document.addEventListener('scroll',     handleActivity, { passive: true })
 
     return () => {
       stopTicking()
       document.removeEventListener('visibilitychange', handleVisibility)
-      window.removeEventListener('focus', handleFocus)
-      window.removeEventListener('blur',  handleBlur)
+      window.removeEventListener('focus',     handleFocus)
+      window.removeEventListener('blur',      handleBlur)
+      document.removeEventListener('mouseleave', handleMouseLeave)
+      document.removeEventListener('mouseenter', handleMouseEnter)
+      document.removeEventListener('mousemove',  handleActivity)
+      document.removeEventListener('keydown',    handleActivity)
+      document.removeEventListener('scroll',     handleActivity)
     }
-  }, [asset.id, sessionId]) // re-runs when user navigates to a different asset
+  }, [asset.id, sessionId])
   // ────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {

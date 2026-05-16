@@ -107,6 +107,14 @@ export default function TrackViewer({
     }
   }, [effectiveIndex, trackingInitialized, currentAsset, sessionId])
 
+  // Keep URL in sync with current asset so each asset has a shareable link
+  useEffect(() => {
+    if (layout === 'single') return
+    const url = new URL(window.location.href)
+    url.searchParams.set('asset', String(effectiveIndex + 1))
+    window.history.replaceState(null, '', url.toString())
+  }, [effectiveIndex, layout])
+
   const progress = ((effectiveIndex + 1) / assets.length) * 100
 
   const handleNext = () => {

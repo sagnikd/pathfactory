@@ -14,10 +14,13 @@ type TrackTheme = {
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ orgSlug: string, trackSlug: string }>
+  searchParams: Promise<{ asset?: string }>
 }): Promise<Metadata> {
   const { orgSlug, trackSlug } = await params
+  const sp = await searchParams
 
   const [org] = await db.select().from(organizations).where(eq(organizations.slug, orgSlug))
   if (!org) return { title: 'Content Track' }
@@ -27,12 +30,45 @@ export async function generateMetadata({
   if (!track) return { title: 'Content Track' }
 
   const theme = (track.themeJson as TrackTheme | null) ?? null
-  const pageTitle = theme?.seoTitle?.trim() || `${track.title} | ${org.name}`
+  const trackTitle = theme?.seoTitle?.trim() || `${track.title} | ${org.name}`
   const favicon = theme?.faviconUrl?.trim() || undefined
 
+  // Resolve specific asset for OG metadata when ?asset=N is present
+  let ogTitle = trackTitle
+  let ogImage: string | undefined
+  let ogDescription: string | undefined
+
+  const assetPosition = sp.asset ? Math.max(1, parseInt(sp.asset, 10)) - 1 : 0
+  const trackAssetsData = await db.select({ asset: assets, position: trackAssets.position })
+    .from(trackAssets)
+    .innerJoin(assets, eq(trackAssets.assetId, assets.id))
+    .where(eq(trackAssets.trackId, track.id))
+    .orderBy(asc(trackAssets.position))
+
+  const sortedAssets = trackAssetsData.map(ta => ta.asset)
+  const currentAsset = sortedAssets[Math.min(assetPosition, sortedAssets.length - 1)]
+
+  if (currentAsset) {
+    ogTitle = `${currentAsset.title} | ${track.title}`
+    ogImage = currentAsset.thumbnailUrl ?? undefined
+    ogDescription = currentAsset.description ?? undefined
+  }
+
   return {
-    title: pageTitle,
+    title: ogTitle,
     icons: favicon ? { icon: favicon, shortcut: favicon, apple: favicon } : undefined,
+    openGraph: {
+      title: ogTitle,
+      description: ogDescription,
+      images: ogImage ? [{ url: ogImage, width: 1200, height: 630 }] : undefined,
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: ogTitle,
+      description: ogDescription,
+      images: ogImage ? [ogImage] : undefined,
+    },
   }
 }
 
