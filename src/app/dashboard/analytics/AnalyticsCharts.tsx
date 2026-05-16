@@ -2,7 +2,12 @@
 
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts'
 
-export default function AnalyticsCharts({ funnelData }: { funnelData: any[] }) {
+type FunnelDataPoint = {
+  name: string
+  views: number
+}
+
+export default function AnalyticsCharts({ funnelData }: { funnelData: FunnelDataPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={350}>
       <BarChart data={funnelData}>
@@ -21,7 +26,7 @@ export default function AnalyticsCharts({ funnelData }: { funnelData: any[] }) {
           tickFormatter={(value) => `${value}`}
         />
         <Tooltip cursor={{ fill: 'rgba(0, 0, 0, 0.1)' }} />
-        <Bar dataKey="views" fill="#2563eb" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="views" fill="#007381" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   )

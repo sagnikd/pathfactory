@@ -134,7 +134,7 @@ export default async function PublicExperiencePage({
           bannerImageUrl: theme?.bannerImageUrl?.trim() || null,
           ctaText: theme?.ctaText?.trim() || null,
           ctaUrl: theme?.ctaUrl?.trim() || null,
-          ctaColor: theme?.ctaColor?.trim() || '#f97316',
+          ctaColor: theme?.ctaColor?.trim() || '#007381',
           ctaPlacement: theme?.ctaPlacement ?? 'underHeadline',
         }}
         sections={[]}
@@ -185,7 +185,7 @@ export default async function PublicExperiencePage({
         bannerImageUrl: theme?.bannerImageUrl?.trim() || null,
         ctaText: theme?.ctaText?.trim() || null,
         ctaUrl: theme?.ctaUrl?.trim() || null,
-        ctaColor: theme?.ctaColor?.trim() || '#f97316',
+        ctaColor: theme?.ctaColor?.trim() || '#007381',
         ctaPlacement: theme?.ctaPlacement ?? 'underHeadline',
       }}
       sections={sections}

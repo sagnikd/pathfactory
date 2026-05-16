@@ -1,5 +1,5 @@
 import { db } from '@/db'
-import { engagements, sessions, visitors, assets, leads } from '@/db/schema'
+import { engagements, sessions, visitors, assets } from '@/db/schema'
 import { eq, count, sql, desc, inArray, and, gte, lte } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AnalyticsCharts from './AnalyticsCharts'
@@ -13,14 +13,6 @@ function fmtDwell(secs: number): string {
   const m = Math.floor(secs / 60)
   const s = Math.round(secs % 60)
   return s > 0 ? `${m}m ${s}s` : `${m}m`
-}
-
-/** HH:MM:SS format like the reference design */
-function fmtHMS(secs: number): string {
-  const h = Math.floor(secs / 3600)
-  const m = Math.floor((secs % 3600) / 60)
-  const s = Math.floor(secs % 60)
-  return [h, m, s].map(v => String(v).padStart(2, '0')).join(':')
 }
 
 // ── Company fuzzy-merge helpers ───────────────────────────────────────────────
@@ -67,25 +59,60 @@ function mergeAccounts(rows: AccountRaw[], threshold = 0.75): AccountRaw[] {
   })
 }
 
-function parseDateParam(val: string | undefined, endOfDay = false): Date | null {
-  if (!val) return null
-  const d = new Date(val)
-  if (isNaN(d.getTime())) return null
+function getSearchParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function parseDateParam(val: string | string[] | undefined, endOfDay = false): Date | null {
+  const raw = getSearchParam(val)?.trim()
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null
+
+  const [year, month, day] = raw.split('-').map(Number)
+  const d = new Date(year, month - 1, day)
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== month - 1 ||
+    d.getDate() !== day
+  ) {
+    return null
+  }
+
   if (endOfDay) d.setHours(23, 59, 59, 999)
+  else d.setHours(0, 0, 0, 0)
   return d
+}
+
+function toSqlTimestamp(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+  const millis = String(date.getMilliseconds()).padStart(3, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${millis}`
 }
 
 export default async function AnalyticsDashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>
+  searchParams: Promise<{ from?: string | string[]; to?: string | string[] }>
 }) {
   const { dbUser } = await getDashboardAuthContext()
   const orgId = dbUser.organizationId
 
   const sp       = await searchParams
-  const dateFrom = parseDateParam(sp.from)
-  const dateTo   = parseDateParam(sp.to, true)
+  const rawFrom  = getSearchParam(sp.from)
+  const rawTo    = getSearchParam(sp.to)
+  let dateFrom   = parseDateParam(rawFrom)
+  let dateTo     = parseDateParam(rawTo, true)
+
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    ;[dateFrom, dateTo] = [parseDateParam(rawTo), parseDateParam(rawFrom, true)]
+  }
+
+  const dateFromSql = dateFrom ? toSqlTimestamp(dateFrom) : null
+  const dateToSql = dateTo ? toSqlTimestamp(dateTo) : null
 
   const engDateConds = [
     dateFrom ? gte(engagements.ts, dateFrom) : undefined,
@@ -93,12 +120,12 @@ export default async function AnalyticsDashboard({
   ].filter((x): x is NonNullable<typeof x> => !!x)
 
   // Date filter fragment for raw SQL
-  const dateFilter = dateFrom && dateTo
-    ? sql` AND e.ts BETWEEN ${dateFrom} AND ${dateTo}`
-    : dateFrom
-    ? sql` AND e.ts >= ${dateFrom}`
-    : dateTo
-    ? sql` AND e.ts <= ${dateTo}`
+  const dateFilter = dateFromSql && dateToSql
+    ? sql` AND e.ts BETWEEN ${dateFromSql}::timestamp AND ${dateToSql}::timestamp`
+    : dateFromSql
+    ? sql` AND e.ts >= ${dateFromSql}::timestamp`
+    : dateToSql
+    ? sql` AND e.ts <= ${dateToSql}::timestamp`
     : sql``
 
   // ── 1. KPI counts ──────────────────────────────────────────────────────────
@@ -322,11 +349,12 @@ export default async function AnalyticsDashboard({
     .filter(e => e.sessions_count > 0)
     .sort((a, b) => b.sessions_count - a.sessions_count)
 
-  // Regular tracks = not experience, not a child of an experience
+  // Track-wise analytics should include every non-experience track, even if it
+  // is also used inside an experience page.
   const trackStats: TrackStatRow[] = allTrackMeta
     .filter(meta => {
       const childIds = parseSelectedIds(meta.theme_json_text)
-      return childIds.length === 0 && !childTrackIdSet.has(meta.track_id)
+      return childIds.length === 0
     })
     .map(meta => {
       const s = trackStatMap.get(meta.track_id)
@@ -344,8 +372,8 @@ export default async function AnalyticsDashboard({
     .filter(t => t.sessions_count > 0)
     .sort((a, b) => b.sessions_count - a.sessions_count)
 
-  const rangeLabel = sp.from || sp.to
-    ? [sp.from, sp.to].filter(Boolean).join(' → ')
+  const rangeLabel = rawFrom || rawTo
+    ? [rawFrom, rawTo].filter(Boolean).join(' → ')
     : 'All time'
 
   return (
@@ -392,40 +420,43 @@ export default async function AnalyticsDashboard({
         </Card>
       </div>
 
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Track and Experience Analytics</h2>
+          <p className="text-sm text-muted-foreground">
+            Compare engagement by individual tracks and rolled-up experience pages.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Track Performance</CardTitle>
+              <p className="text-xs text-muted-foreground">Sessions, visitors, views, and dwell per track. Click headers to sort.</p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <TrackStatsTable rows={trackStats} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Experience Performance</CardTitle>
+              <p className="text-xs text-muted-foreground">Aggregated from the tracks included in each experience. Click headers to sort.</p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ExperienceStatsTable rows={experienceStats} />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
       <AnalyticsTables
         visitors={topVisitors}
         accounts={topAccounts}
         dwell={topByDwell}
         binge={topByBinge}
       />
-
-      {/* Row 3: Track + Experience performance */}
-      {(trackStats.length > 0 || experienceStats.length > 0) && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {trackStats.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Track Performance</CardTitle>
-                <p className="text-xs text-muted-foreground">Sessions, visitors & dwell per track · click to sort</p>
-              </CardHeader>
-              <CardContent className="p-0">
-                <TrackStatsTable rows={trackStats} />
-              </CardContent>
-            </Card>
-          )}
-          {experienceStats.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Experience Performance</CardTitle>
-                <p className="text-xs text-muted-foreground">Aggregated across child tracks · click to sort</p>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ExperienceStatsTable rows={experienceStats} />
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
 
       {/* Row 4: Funnel + Top Performing Assets (existing) */}
       <div className="grid gap-4 md:grid-cols-2">

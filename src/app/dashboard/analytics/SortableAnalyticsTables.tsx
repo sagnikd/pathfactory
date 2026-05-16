@@ -252,10 +252,11 @@ export function ExperienceStatsTable({ rows }: { rows: ExperienceStatRow[] }) {
     <table className="w-full">
       <thead>
         <tr>
-          <th className={`${thBase} text-left pl-4 w-[38%]`}>#&nbsp;&nbsp;Experience</th>
+          <th className={`${thBase} text-left pl-4 w-[34%]`}>#&nbsp;&nbsp;Experience</th>
           <Th label="Tracks"   col="track_count"     sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
           <Th label="Sessions" col="sessions_count"  sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
-          <Th label="Visitors" col="unique_visitors"  sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
+          <Th label="Visitors" col="unique_visitors" sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
+          <Th label="Views"    col="views"           sortCol={sortCol} sortDir={sortDir} onSort={toggle} right />
           <Th label="Dwell"    col="total_dwell_secs" sortCol={sortCol} sortDir={sortDir} onSort={toggle} right className="pr-4" />
         </tr>
       </thead>
@@ -271,6 +272,7 @@ export function ExperienceStatsTable({ rows }: { rows: ExperienceStatRow[] }) {
             </td>
             <td className={`${tdBase} text-right tabular-nums`}>{e.sessions_count}</td>
             <td className={`${tdBase} text-right tabular-nums`}>{e.unique_visitors}</td>
+            <td className={`${tdBase} text-right tabular-nums`}>{e.views}</td>
             <td className={`${tdBase} text-right tabular-nums pr-4 font-medium text-primary`}>{fmtHMS(e.total_dwell_secs)}</td>
           </tr>
         ))}

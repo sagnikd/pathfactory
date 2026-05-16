@@ -16,7 +16,7 @@ export default async function LoginPage({
     <div className="flex h-screen w-full">
       {/* Left branded panel */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12"
-        style={{ background: 'linear-gradient(135deg, oklch(0.49 0.22 264.05) 0%, oklch(0.38 0.2 290) 100%)' }}>
+        style={{ background: 'linear-gradient(135deg, #007381 0%, #005a65 100%)' }}>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
             <Layers className="w-5 h-5 text-white" />

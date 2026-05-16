@@ -98,7 +98,7 @@ export default async function EditExperiencePage({
           subheadline: theme?.subheadline ?? '',
           ctaText: theme?.ctaText ?? '',
           ctaUrl: theme?.ctaUrl ?? '',
-          ctaColor: theme?.ctaColor ?? '#f97316',
+          ctaColor: theme?.ctaColor ?? '#007381',
           ctaPlacement: theme?.ctaPlacement ?? 'underHeadline',
           selectedTrackIds: theme?.selectedTrackIds ?? [],
           sectionHeadlines: theme?.sectionHeadlines ?? {},

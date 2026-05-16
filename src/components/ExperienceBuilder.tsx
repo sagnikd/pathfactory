@@ -16,6 +16,8 @@ import { Loader2, Plus, UploadCloud, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useDropzone } from 'react-dropzone'
 
+const DEFAULT_CTA_COLOR = '#007381'
+
 type TrackOption = {
   id: string
   title: string
@@ -58,7 +60,7 @@ export function ExperienceBuilder({
   const [subheadline, setSubheadline] = useState(initialExperience?.subheadline ?? '')
   const [ctaText, setCtaText] = useState(initialExperience?.ctaText ?? '')
   const [ctaUrl, setCtaUrl] = useState(initialExperience?.ctaUrl ?? '')
-  const [ctaColor, setCtaColor] = useState(initialExperience?.ctaColor ?? '#f97316')
+  const [ctaColor, setCtaColor] = useState(initialExperience?.ctaColor ?? DEFAULT_CTA_COLOR)
   const [ctaPlacement, setCtaPlacement] = useState<'underHeadline' | 'topLeft' | 'topRight'>(initialExperience?.ctaPlacement ?? 'underHeadline')
   const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>(initialExperience?.selectedTrackIds ?? [])
   const [sectionHeadlines, setSectionHeadlines] = useState<Record<string, string>>(initialExperience?.sectionHeadlines ?? {})
@@ -72,7 +74,7 @@ export function ExperienceBuilder({
     const hex = withHash.toLowerCase()
     const isShort = /^#[0-9a-f]{3}$/.test(hex)
     const isLong = /^#[0-9a-f]{6}$/.test(hex)
-    return isShort || isLong ? hex : '#f97316'
+    return isShort || isLong ? hex : DEFAULT_CTA_COLOR
   }
 
   const selectedTracks = useMemo(
@@ -290,11 +292,11 @@ export function ExperienceBuilder({
               <Input
                 value={ctaColor}
                 onChange={(e) => setCtaColor(e.target.value)}
-                placeholder="#f97316"
+                placeholder={DEFAULT_CTA_COLOR}
                 className="h-10 w-32 font-mono"
               />
             </div>
-            <p className="text-xs text-muted-foreground">Supports hex values like #ff6a00 or ff6a00</p>
+            <p className="text-xs text-muted-foreground">Supports hex values like #007381 or 007381</p>
           </div>
           <div className="space-y-1.5">
             <Label>CTA placement</Label>

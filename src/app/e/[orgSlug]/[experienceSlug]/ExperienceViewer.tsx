@@ -104,7 +104,7 @@ export default function ExperienceViewer({
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white shadow-sm"
-      style={{ backgroundColor: hero.ctaColor || '#f97316' }}
+      style={{ backgroundColor: hero.ctaColor || '#007381' }}
     >
       {hero.ctaText}
     </a>
