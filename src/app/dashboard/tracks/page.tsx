@@ -58,8 +58,9 @@ export default async function TracksPage() {
       ) : (
         <div className="grid gap-3">
           {regularTracks.map((track) => (
-            <div
+            <Link
               key={track.id}
+              href={`/dashboard/tracks/${track.id}`}
               className="flex items-center justify-between rounded-xl border bg-card px-5 py-4 hover:border-primary/30 transition-colors"
             >
               <div className="flex items-center gap-4">
@@ -85,14 +86,10 @@ export default async function TracksPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Link href={`/dashboard/tracks/${track.id}`}>
-                  <Button variant="ghost" size="sm">
-                    Edit <ArrowRight className="ml-1.5 h-3 w-3" />
-                  </Button>
-                </Link>
-              </div>
-            </div>
+              <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                Edit <ArrowRight className="h-3 w-3" />
+              </span>
+            </Link>
           ))}
         </div>
       )}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,8 +13,7 @@ import {
 } from '@/components/ui/select'
 import {
   FileText, Video, Link2, Image as ImageIcon,
-  Plus, ChevronUp, ChevronDown, Loader2,
-  GripVertical, X, Mail, ChevronRight,
+  Plus, Loader2, GripVertical, X, Mail, ChevronRight,
 } from 'lucide-react'
 import { createTrack, updateTrack } from '@/app/dashboard/tracks/actions'
 import type { LeadField, GateConfig } from '@/components/GateOverlay'
@@ -156,6 +155,36 @@ export function TrackBuilder({
     })
   }
 
+  const dragIndex = useRef<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
+
+  function handleDragStart(i: number) {
+    dragIndex.current = i
+  }
+
+  function handleDragOver(e: React.DragEvent, i: number) {
+    e.preventDefault()
+    setDragOver(i)
+  }
+
+  function handleDrop(i: number) {
+    const from = dragIndex.current
+    if (from === null || from === i) { setDragOver(null); return }
+    setSelectedIds((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(i, 0, moved)
+      return next
+    })
+    dragIndex.current = null
+    setDragOver(null)
+  }
+
+  function handleDragEnd() {
+    dragIndex.current = null
+    setDragOver(null)
+  }
+
   function handleAssetsAdded(newAssets: Asset[]) {
     setImportedAssets((prev) => [...prev, ...newAssets])
     setSelectedIds((prev) => [...prev, ...newAssets.map((a) => a.id).filter((id) => !prev.includes(id))])
@@ -266,10 +295,17 @@ export function TrackBuilder({
               {trackAssets.map((asset, i) => (
                 <div
                   key={asset.id}
-                  className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2.5"
+                  draggable
+                  onDragStart={() => handleDragStart(i)}
+                  onDragOver={(e) => handleDragOver(e, i)}
+                  onDrop={() => handleDrop(i)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors ${
+                    dragOver === i ? 'border-primary bg-primary/5' : 'bg-muted/30'
+                  }`}
                 >
                   <span className="text-xs text-muted-foreground w-5 text-center shrink-0">{i + 1}</span>
-                  <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+                  <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab active:cursor-grabbing" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <AssetIcon type={asset.type} />
@@ -280,22 +316,6 @@ export function TrackBuilder({
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => moveUp(i)}
-                      disabled={i === 0}
-                      className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
-                      title="Move up"
-                    >
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => moveDown(i)}
-                      disabled={i === trackAssets.length - 1}
-                      className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
-                      title="Move down"
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
                     <button
                       onClick={() => removeAsset(asset.id)}
                       className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"

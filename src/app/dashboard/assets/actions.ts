@@ -6,6 +6,29 @@ import { assets } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import * as cheerio from 'cheerio'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
+import { createClient as createSupabaseClient } from '@/lib/supabase/server'
+
+// Download external image and re-host in own Supabase Storage.
+// Returns the self-hosted public URL, or the original if anything fails.
+async function mirrorThumbnail(externalUrl: string, assetId: string): Promise<string> {
+  try {
+    const res = await fetch(externalUrl, { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) return externalUrl
+    const contentType = res.headers.get('content-type') ?? 'image/jpeg'
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+    const buffer = await res.arrayBuffer()
+    const supabase = await createSupabaseClient()
+    const path = `thumbnails/${assetId}/thumbnail.${ext}`
+    const { error } = await supabase.storage
+      .from('assets')
+      .upload(path, buffer, { contentType, upsert: true })
+    if (error) return externalUrl
+    const { data } = supabase.storage.from('assets').getPublicUrl(path)
+    return data.publicUrl
+  } catch {
+    return externalUrl // fallback to original — better broken than missing
+  }
+}
 
 function extractYouTubeId(url: string): string | null {
   try {
@@ -125,6 +148,15 @@ export async function addUrlAsset(organizationId: string, url: string) {
       thumbnailUrl,
     }).returning()
 
+    // Mirror external thumbnail to own storage so it never breaks if source changes
+    if (thumbnailUrl) {
+      const hostedUrl = await mirrorThumbnail(thumbnailUrl, asset.id)
+      if (hostedUrl !== thumbnailUrl) {
+        await db.update(assets).set({ thumbnailUrl: hostedUrl }).where(eq(assets.id, asset.id))
+        asset.thumbnailUrl = hostedUrl
+      }
+    }
+
     revalidatePath('/dashboard/assets')
     return { success: true, asset }
   } catch (error: unknown) {
@@ -192,6 +224,7 @@ export async function deleteAsset(assetId: string) {
     const [asset] = await db.select({
       id: assets.id,
       organizationId: assets.organizationId,
+      thumbnailUrl: assets.thumbnailUrl,
     })
     .from(assets)
     .where(eq(assets.id, assetId))
@@ -199,6 +232,21 @@ export async function deleteAsset(assetId: string) {
     if (!asset) return { success: false, error: 'Asset not found' }
     if (asset.organizationId !== dbUser.organizationId) {
       return { success: false, error: 'Not authorized to delete this asset' }
+    }
+
+    // Delete uploaded thumbnail from Supabase Storage before removing DB record
+    if (asset.thumbnailUrl) {
+      try {
+        const supabase = await createSupabaseClient()
+        const url = new URL(asset.thumbnailUrl)
+        // Extract path after /object/public/assets/
+        const match = url.pathname.match(/\/object\/public\/assets\/(.+)/)
+        if (match) {
+          await supabase.storage.from('assets').remove([match[1]])
+        }
+      } catch {
+        // Best-effort — don't block deletion on storage cleanup failure
+      }
     }
 
     await db.delete(assets).where(eq(assets.id, assetId))
