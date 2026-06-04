@@ -21,19 +21,25 @@ let currentVisitorId: string | null = null;
 
 export async function initializeTracking() {
   currentVisitorId = await getVisitorFingerprint();
-  
+
   if (typeof window !== 'undefined') {
+    // Persist fingerprint as a cookie so server-side page.tsx can read it
+    // on any track visit and recognise returning / known visitors.
+    // 1-year expiry, path=/ so it's sent on all track URLs.
+    const maxAge = 60 * 60 * 24 * 365
+    document.cookie = `visitorId=${currentVisitorId}; path=/; max-age=${maxAge}; SameSite=Lax`
+
     if (!flushInterval) {
       flushInterval = setInterval(flushQueue, 5000);
     }
-    
+
     window.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         flushQueue();
       }
     });
   }
-  
+
   return currentVisitorId;
 }
 

@@ -101,11 +101,7 @@ export default function TrackViewer({
     })()
   }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (trackingInitialized && currentAsset && sessionId) {
-      trackEvent({ sessionId, assetId: currentAsset.id, eventType: 'view' })
-    }
-  }, [effectiveIndex, trackingInitialized, currentAsset, sessionId])
+  // view event now fired by AssetViewer after 15 s of active engagement
 
   // Keep URL in sync with current asset so each asset has a shareable link
   useEffect(() => {

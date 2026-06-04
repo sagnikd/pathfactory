@@ -76,12 +76,21 @@ export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }
   //   3. Cursor is inside the browser viewport (mouseleave/mouseenter)
   //   4. User was active within the last 60 s (idle detection)
   useEffect(() => {
-    trackEvent({ sessionId, assetId: asset.id, eventType: 'view' })
-
     const IDLE_MS = 15_000
+    let viewFired = false
+    let viewTimer: ReturnType<typeof setTimeout> | null = null
     let tickInterval: ReturnType<typeof setInterval> | null = null
     let cursorInPage = true
     let lastActivity = Date.now()
+
+    const fireView = () => {
+      if (viewFired) return
+      viewFired = true
+      trackEvent({ sessionId, assetId: asset.id, eventType: 'view' })
+    }
+
+    // Count as a view only after 15 s of active engagement
+    viewTimer = setTimeout(fireView, 15_000)
 
     const recordActivity = () => { lastActivity = Date.now() }
 
@@ -139,6 +148,7 @@ export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }
 
     return () => {
       stopTicking()
+      if (viewTimer) clearTimeout(viewTimer)
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('focus',     handleFocus)
       window.removeEventListener('blur',      handleBlur)

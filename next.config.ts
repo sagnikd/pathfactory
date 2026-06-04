@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://s.ytimg.com",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
-              "font-src 'self' data:",
+              "font-src 'self' data: https://fonts.cdnfonts.com",
               "media-src 'self' blob: https:",
               // Allow the PDF worker served from /public
               "worker-src 'self' blob:",
