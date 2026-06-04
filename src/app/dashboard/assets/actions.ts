@@ -112,6 +112,10 @@ export async function addUrlAsset(organizationId: string, url: string) {
       type = 'pdf'
       title = titleFromUrl(url)
       thumbnailUrl = pageScreenshotUrl(url)
+    } else if (/\.(mp4|mov|webm|m4v|avi|ogv|wmv)(\?.*)?$/i.test(url)) {
+      type = 'video'
+      title = titleFromUrl(url)
+      thumbnailUrl = pageScreenshotUrl(url)
     } else {
       try {
         const response = await fetch(url, {
@@ -119,6 +123,32 @@ export async function addUrlAsset(organizationId: string, url: string) {
           signal: AbortSignal.timeout(8000),
         })
         if (response.ok) {
+          const contentType = response.headers.get('content-type') ?? ''
+          // Never try to parse binary/media responses as HTML
+          if (!contentType.includes('text/') && !contentType.includes('html') && !contentType.includes('xml')) {
+            if (contentType.startsWith('video/') || contentType.startsWith('audio/')) {
+              type = 'video'
+            }
+            thumbnailUrl = pageScreenshotUrl(url)
+            // skip HTML parsing — fall through to insert
+            const [asset] = await db.insert(assets).values({
+              organizationId,
+              type,
+              title,
+              description,
+              sourceUrl: url,
+              thumbnailUrl,
+            }).returning()
+            if (thumbnailUrl) {
+              const hostedUrl = await mirrorThumbnail(thumbnailUrl, asset.id)
+              if (hostedUrl !== thumbnailUrl) {
+                await db.update(assets).set({ thumbnailUrl: hostedUrl }).where(eq(assets.id, asset.id))
+                asset.thumbnailUrl = hostedUrl
+              }
+            }
+            revalidatePath('/dashboard/assets')
+            return { success: true, asset }
+          }
           const html = await response.text()
           const $ = cheerio.load(html)
           const ogTitle = $('meta[property="og:title"]').attr('content')
