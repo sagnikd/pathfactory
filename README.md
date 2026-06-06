@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PathFactory
 
-## Getting Started
+A B2B Content Engagement Platform. Curate assets into binge-able content tracks, gate them with forms, track deep engagement, and score leads — all from one dashboard.
 
-First, run the development server:
+## What it does
+
+**Content Tracks** — Organize PDFs, videos, articles, and images into curated sequences with configurable layouts (binge, hub, single asset). Share via a public `/{org}/{track}` URL.
+
+**Asset Management** — Add assets by URL (YouTube, Vimeo, Cloudinary, article, direct MP4) or upload PDFs directly. Titles and thumbnails auto-extracted.
+
+**Engagement Tracking** — Captures granular events per visitor per asset:
+- Scroll depth milestones (25 / 50 / 75 / 100%)
+- Video play, pause, seek, complete
+- Dwell time ticks
+- Clicks and asset opens
+
+**Visitor Identification** — Fingerprint-based anonymous tracking (FingerprintJS) with UTM parameter capture. Email capture upgrades anonymous visitors to identified leads.
+
+**Lead Scoring** — Configurable point-based scoring per engagement signal (asset view, deep scroll, video complete, return session). Scores updated in real time.
+
+**Forms & Gates** — Conditional form placement: email gate before first asset, post-asset, or exit-intent. Fully configurable per track.
+
+**ABM (Account-Based Marketing)** — Match visitors to target accounts via email domain, reverse IP lookup, or fuzzy matching. Confidence levels tracked per match.
+
+**Analytics Dashboard** — Multi-section analytics across tracks, assets, experiences, leads, and ABM performance.
+
+**Webhooks** — Push engagement events and lead data to CRMs or MAPs on configurable triggers.
+
+**Multi-tenant** — Organizations own their tracks and assets. Role-based access (admin / editor).
+
+## Tech stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router) |
+| Database | Supabase (Postgres + pgvector) |
+| ORM | Drizzle |
+| Auth | Supabase Auth |
+| Storage | Supabase Storage |
+| Email | Resend |
+| UI | Tailwind CSS + shadcn/ui |
+| Font | Roobert |
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env.local` and fill in Supabase and Resend credentials.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment variables
 
-## Learn More
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+RESEND_API_KEY=
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Project structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+  app/
+    dashboard/       # Creator dashboard (tracks, assets, analytics, leads, ABM)
+    t/[org]/[track]/ # Public track viewer
+    api/events/      # Engagement event ingestion endpoint
+  db/
+    schema.ts        # Drizzle schema (13 tables)
+  lib/               # Auth, Supabase client, utilities
+```
