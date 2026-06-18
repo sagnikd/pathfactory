@@ -121,73 +121,86 @@ export default async function PublicTrackPage({
   let isKnownVisitor = false;
 
   if (visitorIdCookie) {
-    // Check if visitor exists
-    const visitorResults = await db.select().from(visitors).where(eq(visitors.fingerprintId, visitorIdCookie))
-    let visitor = visitorResults[0]
-    const isReturningVisitor = !!visitor
+    try {
+      // Check if visitor exists
+      const visitorResults = await db.select().from(visitors).where(eq(visitors.fingerprintId, visitorIdCookie))
+      let visitor = visitorResults[0]
+      const isReturningVisitor = !!visitor
 
-    if (!visitor) {
-      // Create visitor
-      const [newVisitor] = await db.insert(visitors).values({
-        fingerprintId: visitorIdCookie,
-      }).returning()
-      visitor = newVisitor
-    }
-    
-    visitorId = visitor.id;
-
-    if (isReturningVisitor) {
-      const latestLead = await db.select({
-        email: leads.email,
-        formResponsesJson: leads.formResponsesJson,
-      })
-      .from(leads)
-      .where(eq(leads.visitorId, visitor.id))
-      .orderBy(desc(leads.createdAt))
-      .limit(1)
-
-      const lead = latestLead[0]
-      if (lead) {
-        isKnownVisitor = true
-        const fields = (lead.formResponsesJson as Record<string, unknown> | null) ?? null
-        const firstName =
-          typeof fields?.firstName === 'string' ? fields.firstName.trim() : ''
-        const fallbackName =
-          lead.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim() ?? ''
-
-        returningVisitorName    = firstName || fallbackName || null
-        returningVisitorCompany =
-          typeof fields?.company === 'string' && fields.company.trim()
-            ? fields.company.trim()
-            : null
-      } else if (visitor.capturedEmail) {
-        isKnownVisitor = true
-        returningVisitorName =
-          visitor.capturedEmail.split('@')[0]?.replace(/[._-]+/g, ' ').trim() || null
+      if (!visitor) {
+        // Create visitor — may throw on unique constraint race; catch below
+        const [newVisitor] = await db.insert(visitors).values({
+          fingerprintId: visitorIdCookie,
+        }).returning()
+        if (!newVisitor) {
+          // Lost the race — re-fetch
+          const [existing] = await db.select().from(visitors).where(eq(visitors.fingerprintId, visitorIdCookie))
+          visitor = existing
+        } else {
+          visitor = newVisitor
+        }
       }
+
+      if (!visitor) throw new Error('visitor unavailable')
+
+      visitorId = visitor.id
+
+      if (isReturningVisitor) {
+        const latestLead = await db.select({
+          email: leads.email,
+          formResponsesJson: leads.formResponsesJson,
+        })
+        .from(leads)
+        .where(eq(leads.visitorId, visitor.id))
+        .orderBy(desc(leads.createdAt))
+        .limit(1)
+
+        const lead = latestLead[0]
+        if (lead) {
+          isKnownVisitor = true
+          const fields = (lead.formResponsesJson as Record<string, unknown> | null) ?? null
+          const firstName =
+            typeof fields?.firstName === 'string' ? fields.firstName.trim() : ''
+          const fallbackName =
+            lead.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim() ?? ''
+
+          returningVisitorName    = firstName || fallbackName || null
+          returningVisitorCompany =
+            typeof fields?.company === 'string' && fields.company.trim()
+              ? fields.company.trim()
+              : null
+        } else if (visitor.capturedEmail) {
+          isKnownVisitor = true
+          returningVisitorName =
+            visitor.capturedEmail.split('@')[0]?.replace(/[._-]+/g, ' ').trim() || null
+        }
+      }
+
+      // Resolve visitor IP → company (best-effort, non-blocking failure)
+      const reqHeaders = await headers()
+      const rawIp = reqHeaders.get('x-nf-client-connection-ip')           // Netlify edge
+                 ?? reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
+                 ?? reqHeaders.get('x-real-ip')
+                 ?? null
+      const ipInfo = await lookupIp(rawIp)
+
+      // Create session — store IP/company so the notification bell can show it
+      const [newSession] = await db.insert(sessions).values({
+        visitorId: visitor.id,
+        trackId: track.id,
+        deviceJson: {
+          ip:      ipInfo.ip,
+          company: ipInfo.company,
+          country: ipInfo.country,
+          city:    ipInfo.city,
+        },
+      }).returning()
+
+      if (newSession) sessionId = newSession.id
+    } catch (err) {
+      // Tracking setup failed — page still renders, just without session/visitor IDs
+      console.error('[track] visitor/session setup error:', err)
     }
-
-    // Resolve visitor IP → company (best-effort, non-blocking failure)
-    const reqHeaders = await headers()
-    const rawIp = reqHeaders.get('x-nf-client-connection-ip')           // Netlify edge
-               ?? reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
-               ?? reqHeaders.get('x-real-ip')
-               ?? null
-    const ipInfo = await lookupIp(rawIp)
-
-    // Create session — store IP/company so the notification bell can show it
-    const [newSession] = await db.insert(sessions).values({
-      visitorId: visitor.id,
-      trackId: track.id,
-      deviceJson: {
-        ip:      ipInfo.ip,
-        company: ipInfo.company,
-        country: ipInfo.country,
-        city:    ipInfo.city,
-      },
-    }).returning()
-
-    sessionId = newSession.id
   }
 
   return (
