@@ -23,6 +23,7 @@
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.14.0",
     "next": "16.2.4",
+    "openai": "^6.44.0",
     "pgvector": "^0.2.1",
     "postgres": "^3.4.9",
     "prisma": "^7.8.0",

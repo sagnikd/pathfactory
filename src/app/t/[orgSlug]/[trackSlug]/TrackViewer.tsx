@@ -6,11 +6,13 @@ import { Progress } from '@/components/ui/progress'
 import dynamic from 'next/dynamic'
 import { GateOverlay, type GateConfig } from '@/components/GateOverlay'
 import { clientGeoLookup } from '@/lib/geoLookup'
+import { TrackChatWidget } from '@/components/TrackChatWidget'
+import { getTrackChatConfig } from '@/lib/trackChatConfig'
 
 const AssetViewer = dynamic(() => import('./AssetViewer').then(m => m.AssetViewer), { ssr: false })
 
 type TrackViewerProps = {
-  track: { id: string; title: string; layout?: 'binge' | 'hub' | 'single'; gateConfigJson?: unknown }
+  track: { id: string; title: string; layout?: 'binge' | 'hub' | 'single'; gateConfigJson?: unknown; themeJson?: unknown }
   assets: Array<{
     id: string
     title: string
@@ -279,6 +281,11 @@ export default function TrackViewer({
           </button>
         </div>
       )}
+      <TrackChatWidget
+        trackId={track.id}
+        currentAssetId={currentAsset?.id}
+        chatConfig={getTrackChatConfig(track.themeJson)}
+      />
     </div>
   )
 }
