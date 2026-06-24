@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { leads, sessions, visitors } from '@/db/schema'
+import { chatConversations, chatMessages, leads, sessions, visitors } from '@/db/schema'
 import {
   buildSystemPrompt,
   fetchTrackContext,
@@ -265,6 +265,66 @@ async function callOpenAI(
 }
 
 // ---------------------------------------------------------------------------
+// Chat inbox persistence
+// ---------------------------------------------------------------------------
+
+async function persistChatTurn(
+  trackId: string,
+  sessionId: string | null,
+  userMessage: string,
+  assistantAnswer: string
+): Promise<void> {
+  // Resolve visitor + captured contact from the session, when present
+  let visitorId: string | null = null
+  let contactEmail: string | null = null
+  if (sessionId) {
+    const [row] = await db
+      .select({ visitorId: sessions.visitorId, capturedEmail: visitors.capturedEmail })
+      .from(sessions)
+      .innerJoin(visitors, eq(sessions.visitorId, visitors.id))
+      .where(eq(sessions.id, sessionId))
+      .limit(1)
+    if (row) {
+      visitorId = row.visitorId
+      contactEmail = row.capturedEmail?.trim() || null
+    }
+  }
+
+  // Find an existing conversation for this session+track, else create one
+  let conversationId: string | null = null
+  if (sessionId) {
+    const [existing] = await db
+      .select({ id: chatConversations.id })
+      .from(chatConversations)
+      .where(and(eq(chatConversations.sessionId, sessionId), eq(chatConversations.trackId, trackId)))
+      .limit(1)
+    conversationId = existing?.id ?? null
+  }
+
+  if (!conversationId) {
+    const [created] = await db
+      .insert(chatConversations)
+      .values({ trackId, sessionId, visitorId, contactEmail })
+      .returning({ id: chatConversations.id })
+    conversationId = created.id
+  }
+
+  await db.insert(chatMessages).values([
+    { conversationId, role: 'user', content: userMessage },
+    { conversationId, role: 'assistant', content: assistantAnswer },
+  ])
+
+  await db
+    .update(chatConversations)
+    .set({
+      messageCount: sql`${chatConversations.messageCount} + 2`,
+      lastMessageAt: new Date(),
+      ...(contactEmail ? { contactEmail } : {}),
+    })
+    .where(eq(chatConversations.id, conversationId))
+}
+
+// ---------------------------------------------------------------------------
 // Route handler
 // ---------------------------------------------------------------------------
 
@@ -334,6 +394,11 @@ export async function POST(req: Request) {
       : null
 
     const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions)
+
+    // Persist the turn to the chat inbox (best-effort — never block the reply)
+    void persistChatTurn(trackId, sessionId, message, assistant.answer).catch((err) =>
+      console.error('[track-chat] persist failed:', err)
+    )
 
     const showMeetingCta = Boolean(
       chatConfig.meetingUrl &&
