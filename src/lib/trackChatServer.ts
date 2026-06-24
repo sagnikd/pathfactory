@@ -3,8 +3,23 @@ import { db } from '@/db'
 import { assets, organizations, trackAssets, tracks } from '@/db/schema'
 
 // ---------------------------------------------------------------------------
-// PDF text extraction (server-side, best-effort)
+// Asset content extraction (server-side, best-effort)
 // ---------------------------------------------------------------------------
+
+function isPdfUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  return /\.pdf(\?.*)?$/i.test(url)
+}
+
+function youTubeId(url: string | null | undefined): string | null {
+  if (!url) return null
+  try {
+    const u = new URL(url)
+    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('/')[0] || null
+    if (u.hostname.includes('youtube.com')) return u.searchParams.get('v')
+  } catch {}
+  return null
+}
 
 async function extractPdfText(url: string): Promise<string> {
   try {
@@ -22,6 +37,31 @@ async function extractPdfText(url: string): Promise<string> {
     console.error('[pdf-extract] failed:', err)
     return ''
   }
+}
+
+async function extractYouTubeTranscript(url: string): Promise<string> {
+  try {
+    const { YoutubeTranscript } = await import('youtube-transcript')
+    const segments = await YoutubeTranscript.fetchTranscript(url)
+    return segments
+      .map((s) => s.text)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 6000)
+  } catch (err) {
+    console.error('[yt-transcript] failed:', err)
+    return ''
+  }
+}
+
+// Extract readable text from any supported asset (PDF file/URL or YouTube video)
+async function extractAssetText(asset: Asset): Promise<string> {
+  const url = asset.fileUrl ?? asset.sourceUrl
+  if (!url) return ''
+  if (asset.type === 'pdf' || isPdfUrl(url)) return extractPdfText(url)
+  if (youTubeId(url)) return extractYouTubeTranscript(url)
+  return ''
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +217,7 @@ function assetLine(asset: Asset, index: number, pdfText?: string): string {
     parts.push(`   Tags: ${tags.join(', ')}`)
   }
   if (pdfText) {
-    parts.push(`   Content:\n${pdfText.slice(0, 3000)}`)
+    parts.push(`   Content (extracted text / video transcript):\n${pdfText.slice(0, 3000)}`)
   }
   const url = asset.sourceUrl ?? asset.fileUrl
   if (url) {
@@ -191,21 +231,27 @@ export async function buildSystemPrompt(
   trackAssets: Asset[],
   currentAsset?: Asset
 ): Promise<string> {
-  // Extract PDF text — always include the current asset first, then up to 2 more
-  const pdfExtractions = new Map<string, string>()
-  const allPdfs = trackAssets.filter(a => a.type === 'pdf')
-  const ordered = currentAsset && currentAsset.type === 'pdf'
-    ? [currentAsset, ...allPdfs.filter(a => a.id !== currentAsset.id)]
-    : allPdfs
-  const pdfsToFetch = ordered.slice(0, 3)
+  // Extract readable content (PDF text / YouTube transcript) — always the
+  // current asset first, then up to 2 more extractable assets.
+  const extractions = new Map<string, string>()
+  const extractable = trackAssets.filter(
+    (a) => a.type === 'pdf' || isPdfUrl(a.fileUrl ?? a.sourceUrl) || youTubeId(a.sourceUrl ?? a.fileUrl)
+  )
+  const ordered = currentAsset
+    ? [currentAsset, ...extractable.filter((a) => a.id !== currentAsset.id)]
+    : extractable
+  // Dedupe while preserving order, cap to 3 fetches to bound latency
+  const seen = new Set<string>()
+  const toFetch = ordered.filter((a) => {
+    if (seen.has(a.id)) return false
+    seen.add(a.id)
+    return a.type === 'pdf' || isPdfUrl(a.fileUrl ?? a.sourceUrl) || !!youTubeId(a.sourceUrl ?? a.fileUrl)
+  }).slice(0, 3)
 
   await Promise.all(
-    pdfsToFetch.map(async a => {
-      const url = a.fileUrl ?? a.sourceUrl
-      if (url) {
-        const text = await extractPdfText(url)
-        if (text) pdfExtractions.set(a.id, text)
-      }
+    toFetch.map(async (a) => {
+      const text = await extractAssetText(a)
+      if (text) extractions.set(a.id, text)
     })
   )
 
@@ -216,8 +262,8 @@ export async function buildSystemPrompt(
         `  Title: ${currentAsset.title}`,
         `  Type:  ${currentAsset.type}`,
         currentAsset.description ? `  Description: ${currentAsset.description.slice(0, 300)}` : '',
-        pdfExtractions.get(currentAsset.id)
-          ? `  Content:\n${pdfExtractions.get(currentAsset.id)!.slice(0, 4000)}`
+        extractions.get(currentAsset.id)
+          ? `  Content:\n${extractions.get(currentAsset.id)!.slice(0, 4000)}`
           : '',
         '',
       ]
@@ -226,7 +272,7 @@ export async function buildSystemPrompt(
     : ''
 
   const assetSection = trackAssets
-    .map((a, i) => assetLine(a, i, pdfExtractions.get(a.id)))
+    .map((a, i) => assetLine(a, i, extractions.get(a.id)))
     .join('\n\n')
 
   return [

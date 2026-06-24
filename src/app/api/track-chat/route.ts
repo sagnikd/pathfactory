@@ -137,6 +137,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+// Flatten markdown to plain prose: drop bold/italics/headings, turn bullet
+// and numbered lists into a single comma-joined sentence flow.
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/`(.*?)`/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    // List items → separate clauses so they don't run together when flattened
+    .replace(/\n\s*[-*•]\s+/g, '; ')
+    .replace(/\n\s*\d+\.\s+/g, '; ')
+    .replace(/^\s*[-*•]\s+/, '')
+    .replace(/^\s*\d+\.\s+/, '')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+;/g, ';')
+    .trim()
+}
+
 function extractOutputText(data: unknown): string {
   if (!isRecord(data)) return ''
   if (typeof data.output_text === 'string') return data.output_text
@@ -231,7 +250,7 @@ async function callOpenAI(
         model,
         instructions: systemPrompt,
         input: message,
-        max_output_tokens: 650,
+        max_output_tokens: 400,
         store: false,
       }),
     })
@@ -246,8 +265,8 @@ async function callOpenAI(
     }
 
     const rawText = extractOutputText(await response.json())
-    // Treat full response as plain-text answer; derive questions deterministically
-    const answer = rawText.replace(/\s+/g, ' ').trim().slice(0, 1400) ||
+    // Strip markdown (bold, bullets, headings) → plain prose, then collapse
+    const answer = stripMarkdown(rawText).slice(0, 700) ||
       'I can help — please ask a more specific question about this track.'
     return {
       answer,
