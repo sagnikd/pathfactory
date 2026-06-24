@@ -155,6 +155,7 @@ export const chatConversations = pgTable("chat_conversations", {
   sessionId: uuid("session_id").references(() => sessions.id, { onDelete: "set null" }),
   visitorId: uuid("visitor_id").references(() => visitors.id, { onDelete: "set null" }),
   contactEmail: text("contact_email"),
+  contactName: text("contact_name"),
   messageCount: integer("message_count").default(0).notNull(),
   lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

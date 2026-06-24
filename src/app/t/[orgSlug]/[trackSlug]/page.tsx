@@ -108,7 +108,18 @@ export default async function PublicTrackPage({
   .where(eq(trackAssets.trackId, track.id))
   .orderBy(asc(trackAssets.position))
 
-  const sortedAssets = trackAssetsData.map(ta => ta.asset)
+  // Strip server-only cached extraction text from metadataJson before it
+  // reaches the client — it can contain full PDF / transcript content and
+  // must never be exposed on a public (esp. gated) page.
+  const sortedAssets = trackAssetsData.map((ta) => {
+    const asset = ta.asset
+    const meta = asset.metadataJson
+    if (meta && typeof meta === 'object' && !Array.isArray(meta) && 'extractedText' in meta) {
+      const { extractedText: _drop, extractedAt: _drop2, ...rest } = meta as Record<string, unknown>
+      return { ...asset, metadataJson: rest }
+    }
+    return asset
+  })
 
   // Visitor & Session Setup
   const cookieStore = await cookies()

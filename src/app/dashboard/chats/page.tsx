@@ -31,6 +31,7 @@ export default async function ChatsPage() {
       id: chatConversations.id,
       trackId: chatConversations.trackId,
       contactEmail: chatConversations.contactEmail,
+      contactName: chatConversations.contactName,
       visitorEmail: visitors.capturedEmail,
       messageCount: chatConversations.messageCount,
       lastMessageAt: chatConversations.lastMessageAt,
@@ -67,7 +68,7 @@ export default async function ChatsPage() {
   const inbox: InboxConversation[] = conversations.map((c) => ({
     id: c.id,
     trackTitle: trackTitleById.get(c.trackId) ?? 'Unknown track',
-    contact: c.contactEmail || c.visitorEmail || null,
+    contact: c.contactName || c.contactEmail || c.visitorEmail || null,
     messageCount: c.messageCount,
     lastMessageAt: c.lastMessageAt.toISOString(),
     messages: messagesByConversation.get(c.id) ?? [],

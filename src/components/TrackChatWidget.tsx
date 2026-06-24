@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { CalendarDays, MessageCircle, Send, X } from 'lucide-react'
+import { CalendarDays, Maximize2, MessageCircle, Minimize2, Send, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { trackEvent } from '@/lib/tracking'
@@ -90,6 +90,7 @@ export function TrackChatWidget({
   sessionId,
 }: TrackChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -215,8 +216,12 @@ export function TrackChatWidget({
       <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
         {isOpen && (
           <div
-            className="mb-3 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
-            style={{ width: 350, maxHeight: 480 }}
+            className="mb-3 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl transition-all duration-200"
+            style={
+              isExpanded
+                ? { width: 'min(90vw, 560px)', height: 'min(80vh, 720px)', maxHeight: '80vh' }
+                : { width: 'min(90vw, 350px)', maxHeight: 480 }
+            }
           >
             {/* Header */}
             <div
@@ -243,6 +248,15 @@ export function TrackChatWidget({
                     <span className="hidden sm:inline">{meetingCtaLabel}</span>
                   </a>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded((v) => !v)}
+                  className="hidden size-7 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/15 hover:text-white sm:flex"
+                  aria-label={isExpanded ? 'Collapse chat' : 'Expand chat'}
+                  title={isExpanded ? 'Collapse' : 'Expand'}
+                >
+                  {isExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}

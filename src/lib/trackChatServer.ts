@@ -55,13 +55,36 @@ async function extractYouTubeTranscript(url: string): Promise<string> {
   }
 }
 
-// Extract readable text from any supported asset (PDF file/URL or YouTube video)
+// Extract readable text from any supported asset (PDF file/URL or YouTube video).
+// Caches the result in assets.metadataJson.extractedText so each asset is only
+// fetched/parsed once — subsequent chats reuse the stored text.
 async function extractAssetText(asset: Asset): Promise<string> {
   const url = asset.fileUrl ?? asset.sourceUrl
   if (!url) return ''
-  if (asset.type === 'pdf' || isPdfUrl(url)) return extractPdfText(url)
-  if (youTubeId(url)) return extractYouTubeTranscript(url)
-  return ''
+
+  // 1. Serve from cache when present
+  const meta = (asset.metadataJson && typeof asset.metadataJson === 'object'
+    ? (asset.metadataJson as Record<string, unknown>)
+    : {})
+  const cached = meta.extractedText
+  if (typeof cached === 'string' && cached.length > 0) return cached
+
+  // 2. Extract fresh
+  let text = ''
+  if (asset.type === 'pdf' || isPdfUrl(url)) text = await extractPdfText(url)
+  else if (youTubeId(url)) text = await extractYouTubeTranscript(url)
+  if (!text) return ''
+
+  // 3. Write back to cache (best-effort — never block on a cache write)
+  try {
+    await db
+      .update(assets)
+      .set({ metadataJson: { ...meta, extractedText: text, extractedAt: new Date().toISOString() } })
+      .where(eq(assets.id, asset.id))
+  } catch (err) {
+    console.error('[asset-extract] cache write failed:', err)
+  }
+  return text
 }
 
 // ---------------------------------------------------------------------------

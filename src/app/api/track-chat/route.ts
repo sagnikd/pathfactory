@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { chatConversations, chatMessages, leads, sessions, visitors } from '@/db/schema'
 import {
@@ -293,9 +293,10 @@ async function persistChatTurn(
   userMessage: string,
   assistantAnswer: string
 ): Promise<void> {
-  // Resolve visitor + captured contact from the session, when present
+  // Resolve visitor + captured contact (email + name) from the session
   let visitorId: string | null = null
   let contactEmail: string | null = null
+  let contactName: string | null = null
   if (sessionId) {
     const [row] = await db
       .select({ visitorId: sessions.visitorId, capturedEmail: visitors.capturedEmail })
@@ -306,6 +307,27 @@ async function persistChatTurn(
     if (row) {
       visitorId = row.visitorId
       contactEmail = row.capturedEmail?.trim() || null
+
+      // Pull the latest lead for a human-readable name + company
+      const [lead] = await db
+        .select({ email: leads.email, formResponsesJson: leads.formResponsesJson })
+        .from(leads)
+        .where(eq(leads.visitorId, row.visitorId))
+        .orderBy(desc(leads.createdAt))
+        .limit(1)
+      if (lead) {
+        contactEmail = contactEmail ?? (lead.email?.trim() || null)
+        const f = (lead.formResponsesJson as Record<string, unknown> | null) ?? {}
+        const first = typeof f.firstName === 'string' ? f.firstName.trim() : ''
+        const last = typeof f.lastName === 'string' ? f.lastName.trim() : ''
+        const company = typeof f.company === 'string' ? f.company.trim() : ''
+        const fullName = [first, last].filter(Boolean).join(' ')
+        contactName =
+          (fullName && company ? `${fullName} (${company})` : fullName || company) ||
+          (contactEmail ? contactEmail.split('@')[0].replace(/[._-]+/g, ' ') : null)
+      } else if (contactEmail) {
+        contactName = contactEmail.split('@')[0].replace(/[._-]+/g, ' ')
+      }
     }
   }
 
@@ -323,7 +345,7 @@ async function persistChatTurn(
   if (!conversationId) {
     const [created] = await db
       .insert(chatConversations)
-      .values({ trackId, sessionId, visitorId, contactEmail })
+      .values({ trackId, sessionId, visitorId, contactEmail, contactName })
       .returning({ id: chatConversations.id })
     conversationId = created.id
   }
@@ -339,6 +361,7 @@ async function persistChatTurn(
       messageCount: sql`${chatConversations.messageCount} + 2`,
       lastMessageAt: new Date(),
       ...(contactEmail ? { contactEmail } : {}),
+      ...(contactName ? { contactName } : {}),
     })
     .where(eq(chatConversations.id, conversationId))
 }
