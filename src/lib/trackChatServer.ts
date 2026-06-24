@@ -3,6 +3,43 @@ import { db } from '@/db'
 import { assets, organizations, trackAssets, tracks } from '@/db/schema'
 
 // ---------------------------------------------------------------------------
+// PDF text extraction (server-side, best-effort)
+// ---------------------------------------------------------------------------
+
+async function extractPdfText(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(12_000) })
+    if (!res.ok) return ''
+    const buffer = new Uint8Array(await res.arrayBuffer())
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    // Resolve the worker file via createRequire (works whether the module is
+    // ESM or CJS at runtime; bare require.resolve is unavailable in ESM scope)
+    const { createRequire } = await import('module')
+    const nodeRequire = createRequire(import.meta.url)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = nodeRequire.resolve(
+      'pdfjs-dist/legacy/build/pdf.worker.mjs'
+    )
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
+    const chunks: string[] = []
+    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      const pageText = content.items
+        .filter((item) => 'str' in item)
+        .map((item) => (item as { str: string }).str)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (pageText) chunks.push(pageText)
+    }
+    return chunks.join('\n').slice(0, 6000)
+  } catch (err) {
+    console.error('[pdf-extract] failed:', err)
+    return ''
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -145,7 +182,7 @@ export function isTrackGated(themeJson: unknown): boolean {
 // 3. buildSystemPrompt
 // ---------------------------------------------------------------------------
 
-function assetLine(asset: Asset, index: number): string {
+function assetLine(asset: Asset, index: number, pdfText?: string): string {
   const parts: string[] = [`${index + 1}. "${asset.title}" [${asset.type}]`]
   if (asset.description) {
     parts.push(`   Description: ${asset.description.slice(0, 300)}`)
@@ -154,6 +191,9 @@ function assetLine(asset: Asset, index: number): string {
   if (tags.length > 0) {
     parts.push(`   Tags: ${tags.join(', ')}`)
   }
+  if (pdfText) {
+    parts.push(`   Content:\n${pdfText.slice(0, 3000)}`)
+  }
   const url = asset.sourceUrl ?? asset.fileUrl
   if (url) {
     parts.push(`   URL: ${url.slice(0, 220)}`)
@@ -161,7 +201,29 @@ function assetLine(asset: Asset, index: number): string {
   return parts.join('\n')
 }
 
-export function buildSystemPrompt(track: Track, trackAssets: Asset[], currentAsset?: Asset): string {
+export async function buildSystemPrompt(
+  track: Track,
+  trackAssets: Asset[],
+  currentAsset?: Asset
+): Promise<string> {
+  // Extract PDF text — always include the current asset first, then up to 2 more
+  const pdfExtractions = new Map<string, string>()
+  const allPdfs = trackAssets.filter(a => a.type === 'pdf')
+  const ordered = currentAsset && currentAsset.type === 'pdf'
+    ? [currentAsset, ...allPdfs.filter(a => a.id !== currentAsset.id)]
+    : allPdfs
+  const pdfsToFetch = ordered.slice(0, 3)
+
+  await Promise.all(
+    pdfsToFetch.map(async a => {
+      const url = a.fileUrl ?? a.sourceUrl
+      if (url) {
+        const text = await extractPdfText(url)
+        if (text) pdfExtractions.set(a.id, text)
+      }
+    })
+  )
+
   const currentSection = currentAsset
     ? [
         '',
@@ -169,13 +231,18 @@ export function buildSystemPrompt(track: Track, trackAssets: Asset[], currentAss
         `  Title: ${currentAsset.title}`,
         `  Type:  ${currentAsset.type}`,
         currentAsset.description ? `  Description: ${currentAsset.description.slice(0, 300)}` : '',
+        pdfExtractions.get(currentAsset.id)
+          ? `  Content:\n${pdfExtractions.get(currentAsset.id)!.slice(0, 4000)}`
+          : '',
         '',
       ]
-        .filter((line) => line !== undefined)
+        .filter(Boolean)
         .join('\n')
     : ''
 
-  const assetSection = trackAssets.map(assetLine).join('\n\n')
+  const assetSection = trackAssets
+    .map((a, i) => assetLine(a, i, pdfExtractions.get(a.id)))
+    .join('\n\n')
 
   return [
     `You are a concise B2B content-guide assistant embedded in a content track titled "${track.title}".`,
@@ -188,9 +255,9 @@ export function buildSystemPrompt(track: Track, trackAssets: Asset[], currentAss
     '2. If the visitor asks something outside the scope of this track, politely acknowledge it and redirect them to the most relevant asset in the list.',
     '3. Never invent asset titles, URLs, statistics, customer names, availability, or pricing.',
     '4. When recommending an asset, use its exact title from the list above.',
-    '5. Keep answers concise (3–5 sentences where possible) and focused on helping the visitor evaluate or navigate this track.',
-    '6. Nudge the visitor toward sharper buying or evaluation questions related to this track.',
-    '7. Return only valid JSON with this shape: {"answer":"...","suggestedQuestions":["...","...","..."]}',
+    '5. Keep answers to 1–2 sentences. No preamble, no summary at the end.',
+    '6. If the answer is in the asset content above, quote or paraphrase it directly.',
+    '7. Reply in plain prose. No JSON, no markdown, no bullet points.',
   ]
     .join('\n')
     .slice(0, 12000)

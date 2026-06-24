@@ -140,7 +140,8 @@ export function TrackChatWidget({
           trackId,
           sessionId: sessionId ?? null,
           currentAssetId: currentAssetId ?? null,
-          messages: nextMessages,
+          message: text,
+          askedQuestions: nextAskedQuestions,
         }),
       })
       const data = await response.json().catch(() => ({})) as ChatApiResponse

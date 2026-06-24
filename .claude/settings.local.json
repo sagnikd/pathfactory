@@ -17,7 +17,14 @@
       "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
       "Bash(curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh)",
       "Bash(bash)",
-      "Bash(cat /private/tmp/claude-501/-Users-sagnikdatta-Library-CloudStorage-OneDrive-iiitb.net-25q3-datascience-pathfactory/70da2198-1c02-4f6f-9ea6-3cfb1d89f78d/tasks/by3tqrpzu.output)"
+      "Bash(cat /private/tmp/claude-501/-Users-sagnikdatta-Library-CloudStorage-OneDrive-iiitb.net-25q3-datascience-pathfactory/70da2198-1c02-4f6f-9ea6-3cfb1d89f78d/tasks/by3tqrpzu.output)",
+      "Bash(ls ~/.ssh/*.pub 2>/dev/null || echo \"NO_KEYS\")",
+      "Bash(git remote *)",
+      "Bash(xxd /Users/sagnikdatta/Documents/pathfactory/src/lib/trackChatConfig.ts)",
+      "Bash(ls /tmp/path-factory-ref/.env.example 2>/dev/null && echo \"exists\" || echo \"not found\")",
+      "Bash(brew install *)",
+      "Bash(node -e \"require\\('pdfjs-dist'\\); console.log\\(require\\('pdfjs-dist/package.json'\\).version, require.resolve\\('pdfjs-dist'\\)\\)\")",
+      "Bash(npm uninstall *)"
     ]
   }
 }

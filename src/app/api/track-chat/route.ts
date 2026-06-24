@@ -214,7 +214,7 @@ async function callOpenAI(
     ? context.assets.find((a) => a.id === currentAssetId)
     : undefined
 
-  const systemPrompt = buildSystemPrompt(context.track, context.assets, currentAsset)
+  const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset)
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 20_000)
@@ -233,14 +233,12 @@ async function callOpenAI(
         input: message,
         max_output_tokens: 650,
         store: false,
-        text: {
-          format: { type: 'json_object' },
-        },
       }),
     })
 
     if (!response.ok) {
-      console.error('[track-chat] OpenAI error:', response.status, await response.text().catch(() => ''))
+      const errBody = await response.text().catch(() => '')
+      console.error('[track-chat] OpenAI error:', response.status, errBody)
       return {
         answer: `This track covers "${context.track.title}". ${context.assets.length > 0 ? `A good starting point is "${context.assets[0].title}".` : ''}`,
         suggestedQuestions: getRecommendedQuestions(context, currentAssetId, askedQuestions),
@@ -248,7 +246,13 @@ async function callOpenAI(
     }
 
     const rawText = extractOutputText(await response.json())
-    return parseAssistantPayload(rawText, context, currentAssetId, askedQuestions)
+    // Treat full response as plain-text answer; derive questions deterministically
+    const answer = rawText.replace(/\s+/g, ' ').trim().slice(0, 1400) ||
+      'I can help — please ask a more specific question about this track.'
+    return {
+      answer,
+      suggestedQuestions: getRecommendedQuestions(context, currentAssetId, askedQuestions),
+    }
   } catch (error) {
     console.error('[track-chat] OpenAI request failed:', error)
     return {

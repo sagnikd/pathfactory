@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Keep pdfjs-dist out of the server bundle so it runs as native Node modules
+  // (worker resolution + require.resolve only work when not bundled by Turbopack)
+  serverExternalPackages: ["pdfjs-dist"],
   async headers() {
     return [
       {
