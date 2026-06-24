@@ -24,7 +24,11 @@
       "Bash(ls /tmp/path-factory-ref/.env.example 2>/dev/null && echo \"exists\" || echo \"not found\")",
       "Bash(brew install *)",
       "Bash(node -e \"require\\('pdfjs-dist'\\); console.log\\(require\\('pdfjs-dist/package.json'\\).version, require.resolve\\('pdfjs-dist'\\)\\)\")",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(kill 87093)",
+      "Bash(lsof -ti:3000 -ti:3001)",
+      "Bash(xargs kill -9)",
+      "Bash(grep -A 15 \"pdf-extract\" /tmp/pf-dev.log | head -40)"
     ]
   }
 }

@@ -11,28 +11,13 @@ async function extractPdfText(url: string): Promise<string> {
     const res = await fetch(url, { signal: AbortSignal.timeout(12_000) })
     if (!res.ok) return ''
     const buffer = new Uint8Array(await res.arrayBuffer())
-    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    // Resolve the worker file via createRequire (works whether the module is
-    // ESM or CJS at runtime; bare require.resolve is unavailable in ESM scope)
-    const { createRequire } = await import('module')
-    const nodeRequire = createRequire(import.meta.url)
-    pdfjsLib.GlobalWorkerOptions.workerSrc = nodeRequire.resolve(
-      'pdfjs-dist/legacy/build/pdf.worker.mjs'
-    )
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
-    const chunks: string[] = []
-    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
-      const page = await pdf.getPage(i)
-      const content = await page.getTextContent()
-      const pageText = content.items
-        .filter((item) => 'str' in item)
-        .map((item) => (item as { str: string }).str)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-      if (pageText) chunks.push(pageText)
-    }
-    return chunks.join('\n').slice(0, 6000)
+    // unpdf bundles its own pdfjs build with no worker config — works in
+    // Next.js / serverless without GlobalWorkerOptions setup.
+    const { extractText, getDocumentProxy } = await import('unpdf')
+    const pdf = await getDocumentProxy(buffer)
+    const { text } = await extractText(pdf, { mergePages: true })
+    const merged = Array.isArray(text) ? text.join('\n') : text
+    return merged.replace(/\s+/g, ' ').trim().slice(0, 6000)
   } catch (err) {
     console.error('[pdf-extract] failed:', err)
     return ''
