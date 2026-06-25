@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { db } from '@/db'
-import { sessions, tracks, users, organizations } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { sessions, tracks, users, organizations, visitors, leads } from '@/db/schema'
+import { eq, desc } from 'drizzle-orm'
 import { processAbmSessionMatch } from '@/lib/abm'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -60,13 +60,53 @@ export async function POST(req: Request) {
     const adminEmail = process.env.RESEND_TO_EMAIL ?? adminRows[0].email
 
     const geo = (deviceJson ?? {}) as Record<string, string | null>
-    const company  = geo.company ?? null
     const city     = geo.city    ?? null
     const country  = geo.country ?? null
 
+    // Resolve known-visitor identity (captured email + lead name/company).
+    // A submitted form makes the visitor "known" — prefer that over IP geo.
+    let knownName: string | null = null
+    let knownEmail: string | null = null
+    let knownCompany: string | null = null
+    if (visitorId) {
+      const [vis] = await db
+        .select({ capturedEmail: visitors.capturedEmail })
+        .from(visitors)
+        .where(eq(visitors.id, visitorId))
+        .limit(1)
+      knownEmail = vis?.capturedEmail?.trim() || null
+
+      const [lead] = await db
+        .select({ email: leads.email, formResponsesJson: leads.formResponsesJson })
+        .from(leads)
+        .where(eq(leads.visitorId, visitorId))
+        .orderBy(desc(leads.createdAt))
+        .limit(1)
+      if (lead) {
+        knownEmail = knownEmail ?? (lead.email?.trim() || null)
+        const f = (lead.formResponsesJson as Record<string, unknown> | null) ?? {}
+        const first = typeof f.firstName === 'string' ? f.firstName.trim() : ''
+        const last = typeof f.lastName === 'string' ? f.lastName.trim() : ''
+        knownCompany = typeof f.company === 'string' && f.company.trim() ? f.company.trim() : null
+        knownName = [first, last].filter(Boolean).join(' ') || null
+      }
+      if (!knownName && knownEmail) {
+        knownName = knownEmail.split('@')[0].replace(/[._-]+/g, ' ')
+      }
+    }
+
+    // Prefer the lead's company over IP-derived org name
+    const company = knownCompany ?? geo.company ?? null
+
     const locationParts = [city, country].filter(Boolean)
     const location = locationParts.length > 0 ? locationParts.join(', ') : 'Unknown location'
-    const visitorLabel = company ? `${company} (${location})` : location
+
+    // Headline label: known visitor name+company, else company/location
+    const visitorLabel = knownName
+      ? `${knownName}${company ? ` from ${company}` : ''}`
+      : company
+        ? `${company} (${location})`
+        : location
     const visitedAt = new Date(startedAt).toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
@@ -89,7 +129,9 @@ export async function POST(req: Request) {
     const { data, error: resendError } = await resend.emails.send({
       from: `${orgName} Alerts <${fromDomain}>`,
       to:   adminEmail,
-      subject: `👀 Someone from ${company ?? location} is viewing "${trackTitle}"`,
+      subject: knownName
+        ? `👀 ${visitorLabel} is viewing "${trackTitle}"`
+        : `👀 Someone from ${company ?? location} is viewing "${trackTitle}"`,
       html: `
 <!DOCTYPE html>
 <html>
@@ -111,7 +153,9 @@ export async function POST(req: Request) {
         <tr>
           <td style="padding:32px;">
             <p style="margin:0 0 24px;font-size:15px;color:#3f3f46;line-height:1.6;">
-              Someone is actively browsing one of your content tracks right now.
+              ${knownName
+                ? `<strong>${escapeHtml(knownName)}</strong>${company ? ` from <strong>${escapeHtml(company)}</strong>` : ''} is actively browsing one of your content tracks right now.`
+                : 'Someone is actively browsing one of your content tracks right now.'}
             </p>
 
             <!-- Detail card -->
@@ -119,6 +163,24 @@ export async function POST(req: Request) {
               <tr>
                 <td style="padding:20px 24px;">
                   <table width="100%" cellpadding="0" cellspacing="0">
+                    ${knownName ? `
+                    <tr>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                        <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Visitor</span>
+                      </td>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                        <span style="font-size:14px;color:#18181b;font-weight:600;">${escapeHtml(knownName)}</span>
+                      </td>
+                    </tr>` : ''}
+                    ${knownEmail ? `
+                    <tr>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                        <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Email</span>
+                      </td>
+                      <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">
+                        <span style="font-size:14px;color:#18181b;">${escapeHtml(knownEmail)}</span>
+                      </td>
+                    </tr>` : ''}
                     <tr>
                       <td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">
                         <span style="font-size:12px;color:#71717a;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Track</span>
