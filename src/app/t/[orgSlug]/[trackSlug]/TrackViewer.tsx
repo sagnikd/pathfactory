@@ -88,15 +88,16 @@ export default function TrackViewer({
           }),
         })
 
-        // Notify the org admin by email only after 60 s of browsing,
-        // so we don't spam on quick bounces. Fire-and-forget.
+        // Notify the org admin by email only after the visitor has actually
+        // dwelled. Fire at 75 s so >= 60 s of dwell ticks are recorded; the API
+        // re-checks real dwell (>= 60 s) before sending. Fire-and-forget.
         setTimeout(() => {
           fetch('/api/visitor-notify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId }),
           }).catch(() => {})
-        }, 60_000)
+        }, 75_000)
       } catch {
         // Best-effort — never block the visitor
       }

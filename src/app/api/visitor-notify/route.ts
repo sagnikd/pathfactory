@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { db } from '@/db'
-import { sessions, tracks, users, organizations, visitors, leads } from '@/db/schema'
-import { eq, desc } from 'drizzle-orm'
+import { sessions, tracks, users, organizations, visitors, leads, engagements } from '@/db/schema'
+import { eq, desc, and, count } from 'drizzle-orm'
 import { processAbmSessionMatch } from '@/lib/abm'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -45,6 +45,17 @@ export async function POST(req: Request) {
 
     if (!rows.length) return NextResponse.json({ ok: false, reason: 'session not found' })
     const { trackId, trackSlug, trackTitle, orgId, orgName, deviceJson, startedAt, visitorId } = rows[0]
+
+    // Only notify once the visitor has actually dwelled >= 60s on this session.
+    // Dwell ticks fire ~every 10s of active engagement, so require >= 6 ticks.
+    const [dwell] = await db
+      .select({ ticks: count() })
+      .from(engagements)
+      .where(and(eq(engagements.sessionId, sessionId), eq(engagements.eventType, 'dwell_tick')))
+    const dwellSeconds = Number(dwell?.ticks ?? 0) * 10
+    if (dwellSeconds < 60) {
+      return NextResponse.json({ ok: false, reason: `insufficient dwell (${dwellSeconds}s)` })
+    }
 
     // Find the org admin email
     const adminRows = await db
