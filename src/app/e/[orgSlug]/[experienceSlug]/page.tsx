@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import ExperienceViewer from './ExperienceViewer'
 import { TrackChatWidget } from '@/components/TrackChatWidget'
 import { getTrackChatConfig } from '@/lib/trackChatConfig'
+import { ensureVisitorSession } from '@/lib/visitorSession'
 
 type ExperienceTheme = {
   kind?: string
@@ -177,6 +178,10 @@ export default async function PublicExperiencePage({
     })),
   }))
 
+  // Open a visitor session for this experience so chat conversations link to
+  // a visitor and any captured contact (mirrors the track viewer).
+  const { sessionId } = await ensureVisitorSession(experience.id)
+
   return (
     <>
       <ExperienceViewer
@@ -197,7 +202,7 @@ export default async function PublicExperiencePage({
           experience's child tracks (fetchTrackContext handles the kind:experience case) */}
       <TrackChatWidget
         trackId={experience.id}
-        sessionId={null}
+        sessionId={sessionId}
         chatConfig={getTrackChatConfig(experience.themeJson)}
       />
     </>
