@@ -4,6 +4,8 @@ import { organizations, tracks, trackAssets, assets } from '@/db/schema'
 import { and, eq, inArray, asc, desc } from 'drizzle-orm'
 import type { Metadata } from 'next'
 import ExperienceViewer from './ExperienceViewer'
+import { TrackChatWidget } from '@/components/TrackChatWidget'
+import { getTrackChatConfig } from '@/lib/trackChatConfig'
 
 type ExperienceTheme = {
   kind?: string
@@ -176,19 +178,28 @@ export default async function PublicExperiencePage({
   }))
 
   return (
-    <ExperienceViewer
-      orgSlug={org.slug}
-      viewMode={theme?.viewMode ?? 'showcase'}
-      hero={{
-        headline: theme?.headline?.trim() || experience.title,
-        subheadline: theme?.subheadline?.trim() || '',
-        bannerImageUrl: theme?.bannerImageUrl?.trim() || null,
-        ctaText: theme?.ctaText?.trim() || null,
-        ctaUrl: theme?.ctaUrl?.trim() || null,
-        ctaColor: theme?.ctaColor?.trim() || '#007381',
-        ctaPlacement: theme?.ctaPlacement ?? 'underHeadline',
-      }}
-      sections={sections}
-    />
+    <>
+      <ExperienceViewer
+        orgSlug={org.slug}
+        viewMode={theme?.viewMode ?? 'showcase'}
+        hero={{
+          headline: theme?.headline?.trim() || experience.title,
+          subheadline: theme?.subheadline?.trim() || '',
+          bannerImageUrl: theme?.bannerImageUrl?.trim() || null,
+          ctaText: theme?.ctaText?.trim() || null,
+          ctaUrl: theme?.ctaUrl?.trim() || null,
+          ctaColor: theme?.ctaColor?.trim() || '#007381',
+          ctaPlacement: theme?.ctaPlacement ?? 'underHeadline',
+        }}
+        sections={sections}
+      />
+      {/* Chat assistant — answers from the assets aggregated across this
+          experience's child tracks (fetchTrackContext handles the kind:experience case) */}
+      <TrackChatWidget
+        trackId={experience.id}
+        sessionId={null}
+        chatConfig={getTrackChatConfig(experience.themeJson)}
+      />
+    </>
   )
 }

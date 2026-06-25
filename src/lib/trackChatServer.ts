@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { db } from '@/db'
 import { assets, organizations, trackAssets, tracks } from '@/db/schema'
 
@@ -172,6 +172,16 @@ export async function fetchTrackContext(trackId: string): Promise<TrackContext |
 
   if (!trackRow) return null
 
+  // An "experience" is a wrapper track that aggregates assets from several
+  // child tracks (themeJson.selectedTrackIds). Pull assets from those children;
+  // a normal track pulls its own trackAssets.
+  const theme = asRecord(trackRow.themeJson)
+  const isExperience = theme.kind === 'experience'
+  const selectedTrackIds = isExperience && Array.isArray(theme.selectedTrackIds)
+    ? (theme.selectedTrackIds as unknown[]).filter((v): v is string => typeof v === 'string')
+    : []
+  const assetTrackIds = isExperience && selectedTrackIds.length ? selectedTrackIds : [trackId]
+
   const assetRows = await db
     .select({
       id: assets.id,
@@ -185,8 +195,16 @@ export async function fetchTrackContext(trackId: string): Promise<TrackContext |
     })
     .from(trackAssets)
     .innerJoin(assets, eq(trackAssets.assetId, assets.id))
-    .where(eq(trackAssets.trackId, trackId))
+    .where(inArray(trackAssets.trackId, assetTrackIds))
     .orderBy(asc(trackAssets.position))
+
+  // Dedupe — an asset can belong to multiple child tracks of an experience
+  const seenAssetIds = new Set<string>()
+  const uniqueAssetRows = assetRows.filter((r) => {
+    if (seenAssetIds.has(r.id)) return false
+    seenAssetIds.add(r.id)
+    return true
+  })
 
   return {
     track: {
@@ -197,7 +215,7 @@ export async function fetchTrackContext(trackId: string): Promise<TrackContext |
       themeJson: trackRow.themeJson,
       gateConfigJson: trackRow.gateConfigJson,
     },
-    assets: assetRows.map((row) => ({
+    assets: uniqueAssetRows.map((row) => ({
       id: row.id,
       title: row.title,
       type: row.type,
@@ -240,7 +258,7 @@ function assetLine(asset: Asset, index: number, pdfText?: string): string {
     parts.push(`   Tags: ${tags.join(', ')}`)
   }
   if (pdfText) {
-    parts.push(`   Content (extracted text / video transcript):\n${pdfText.slice(0, 3000)}`)
+    parts.push(`   Content (extracted text / video transcript):\n${pdfText.slice(0, 2200)}`)
   }
   const url = asset.sourceUrl ?? asset.fileUrl
   if (url) {
@@ -260,16 +278,23 @@ export async function buildSystemPrompt(
   const extractable = trackAssets.filter(
     (a) => a.type === 'pdf' || isPdfUrl(a.fileUrl ?? a.sourceUrl) || youTubeId(a.sourceUrl ?? a.fileUrl)
   )
+  // Assets whose text is already cached are free to include — prioritize them
+  // (matters for experiences that aggregate many assets across child tracks).
+  const hasCache = (a: Asset) => {
+    const m = asRecord(a.metadataJson)
+    return typeof m.extractedText === 'string' && m.extractedText.length > 0
+  }
+  const cachedFirst = [...extractable].sort((a, b) => Number(hasCache(b)) - Number(hasCache(a)))
   const ordered = currentAsset
-    ? [currentAsset, ...extractable.filter((a) => a.id !== currentAsset.id)]
-    : extractable
-  // Dedupe while preserving order, cap to 3 fetches to bound latency
+    ? [currentAsset, ...cachedFirst.filter((a) => a.id !== currentAsset.id)]
+    : cachedFirst
+  // Dedupe while preserving order, cap fetches to bound latency
   const seen = new Set<string>()
   const toFetch = ordered.filter((a) => {
     if (seen.has(a.id)) return false
     seen.add(a.id)
     return a.type === 'pdf' || isPdfUrl(a.fileUrl ?? a.sourceUrl) || !!youTubeId(a.sourceUrl ?? a.fileUrl)
-  }).slice(0, 3)
+  }).slice(0, 4)
 
   await Promise.all(
     toFetch.map(async (a) => {
