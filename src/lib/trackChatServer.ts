@@ -55,31 +55,42 @@ async function extractYouTubeTranscript(url: string): Promise<string> {
   }
 }
 
-// Bump this when extraction limits change — forces re-extraction of all cached assets.
+// Bump this when extraction limits change — newer-version caches are preferred,
+// but a stale cache is still used as a fallback when live re-extraction fails.
 const EXTRACT_VERSION = 2
 
 // Extract readable text from any supported asset (PDF file/URL or YouTube video).
 // Caches the result in assets.metadataJson.extractedText so each asset is only
 // fetched/parsed once — subsequent chats reuse the stored text.
+//
+// IMPORTANT: YouTube blocks transcript fetches from datacenter IPs (Netlify),
+// so live extraction usually FAILS in production. Transcripts are normally
+// pre-populated by the local backfill script (scripts/backfill-transcripts.mjs),
+// which runs from a residential IP. This function therefore treats the DB cache
+// as the source of truth and never discards a good cache when a live fetch fails.
 async function extractAssetText(asset: Asset): Promise<string> {
   const url = asset.fileUrl ?? asset.sourceUrl
   if (!url) return ''
 
-  // 1. Serve from cache when present AND up-to-date version
   const meta = (asset.metadataJson && typeof asset.metadataJson === 'object'
     ? (asset.metadataJson as Record<string, unknown>)
     : {})
-  const cached = meta.extractedText
+  const cached = typeof meta.extractedText === 'string' ? meta.extractedText : ''
   const cachedVersion = typeof meta.extractedVersion === 'number' ? meta.extractedVersion : 1
-  if (typeof cached === 'string' && cached.length > 0 && cachedVersion >= EXTRACT_VERSION) return cached
 
-  // 2. Extract fresh
+  // 1. Fresh cache at the current version — use it directly.
+  if (cached.length > 0 && cachedVersion >= EXTRACT_VERSION) return cached
+
+  // 2. Try a fresh extraction (works locally; usually fails on Netlify for YT).
   let text = ''
   if (asset.type === 'pdf' || isPdfUrl(url)) text = await extractPdfText(url)
   else if (youTubeId(url)) text = await extractYouTubeTranscript(url)
-  if (!text) return ''
 
-  // 3. Write back to cache (best-effort — never block on a cache write)
+  // 3. Live extraction failed — fall back to whatever is cached (even if stale).
+  //    Better to serve an older/shorter transcript than nothing.
+  if (!text) return cached
+
+  // 4. Got fresh text — write it back to the cache (best-effort).
   try {
     await db
       .update(assets)
