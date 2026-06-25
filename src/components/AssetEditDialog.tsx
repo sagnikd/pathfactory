@@ -113,19 +113,24 @@ export function AssetEditDialog({
     if (!title.trim()) return
     setSaving(true)
     setError(null)
-    const res = await updateAsset(asset.id, {
-      title: title.trim(),
-      thumbnailUrl: thumbnailUrl || null,
-      tags: tagsText
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean),
-    })
-    setSaving(false)
-    if (res.success) {
-      onClose()
-    } else {
-      setError(res.error || 'Failed to save')
+    try {
+      const res = await updateAsset(asset.id, {
+        title: title.trim(),
+        thumbnailUrl: thumbnailUrl || null,
+        tags: tagsText
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+      })
+      if (res.success) {
+        onClose()
+      } else {
+        setError(res.error || 'Failed to save')
+      }
+    } catch {
+      setError('An unexpected error occurred. Your changes were not saved.')
+    } finally {
+      setSaving(false)
     }
   }
 

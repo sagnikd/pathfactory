@@ -440,6 +440,8 @@ export function TrackBuilder({
               </div>
               <button
                 type="button"
+                role="switch"
+                aria-checked={lcEnabled}
                 onClick={() => setLcEnabled(v => !v)}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${lcEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
               >
@@ -537,6 +539,8 @@ export function TrackBuilder({
                           <div className="flex justify-center">
                             <button
                               type="button"
+                              role="switch"
+                              aria-checked={field.enabled}
                               disabled={field.name === 'email'}
                               onClick={() => toggleField(field.name, 'enabled')}
                               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${field.enabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
@@ -550,6 +554,8 @@ export function TrackBuilder({
                           <div className="flex justify-center">
                             <button
                               type="button"
+                              role="switch"
+                              aria-checked={field.required}
                               disabled={field.name === 'email' || !field.enabled}
                               onClick={() => toggleField(field.name, 'required')}
                               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${field.required ? 'bg-primary' : 'bg-muted-foreground/30'}`}
@@ -648,6 +654,8 @@ export function TrackBuilder({
               </div>
               <button
                 type="button"
+                role="switch"
+                aria-checked={chatEnabled}
                 onClick={() => setChatEnabled(v => !v)}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${chatEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
               >

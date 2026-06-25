@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
             value: [
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://s.ytimg.com",
-              "style-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline' https://fonts.cdnfonts.com",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data: https://fonts.cdnfonts.com",
               "media-src 'self' blob: https:",
@@ -26,6 +26,18 @@ const nextConfig: NextConfig = {
               // Allow fetching from Supabase and external APIs
               "connect-src 'self' https:",
             ].join("; "),
+          },
+        ],
+      },
+      {
+        // Prevent authenticated dashboard pages from being served from bfcache
+        // after logout — a hard reload would 307→/login but the stale in-memory
+        // paint would expose real lead/asset data to the next user on a shared machine.
+        source: "/dashboard(.*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, must-revalidate",
           },
         ],
       },

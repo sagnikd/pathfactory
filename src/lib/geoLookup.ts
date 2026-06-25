@@ -96,12 +96,8 @@ async function tryIpApiCom(): Promise<GeoResult | null> {
 export async function clientGeoLookup(): Promise<GeoResult> {
   const empty: GeoResult = { company: null, country: null, city: null }
 
-  // Try both providers in parallel — take whichever returns a result first;
-  // if both succeed, prefer ip-api.com (more accurate for Asia/India).
-  const [a, b] = await Promise.allSettled([tryIpApiCo(), tryIpApiCom()])
-  const resultA = a.status === 'fulfilled' ? a.value : null
-  const resultB = b.status === 'fulfilled' ? b.value : null
-
-  // Prefer ip-api.com result when available; fall back to ipapi.co; then empty
-  return resultB ?? resultA ?? empty
+  // ip-api.com blocks browser-origin / HTTPS requests with 403 (free-tier restriction).
+  // Use ipapi.co only — it allows browser-side calls on the free tier.
+  const result = await tryIpApiCo()
+  return result ?? empty
 }

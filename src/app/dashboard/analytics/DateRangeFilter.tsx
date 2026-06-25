@@ -47,6 +47,9 @@ export function DateRangeFilter() {
       if (v) sp.set(k, v); else sp.delete(k)
     })
     router.push(`${pathname}?${sp.toString()}`)
+    // Force the server component to re-fetch with the new search params.
+    // Without this, the Next.js router cache may serve the old RSC payload.
+    router.refresh()
   }
 
   function applyPreset(days: number) {

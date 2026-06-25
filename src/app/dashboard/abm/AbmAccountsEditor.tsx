@@ -32,6 +32,7 @@ export default function AbmAccountsEditor({ accounts }: { accounts: AbmAccountRo
   }
 
   const handleDelete = (formData: FormData) => {
+    if (!window.confirm('Delete this ABM account? This cannot be undone.')) return
     startTransition(async () => {
       await deleteAbmAccount(formData)
       if (editingId === String(formData.get('accountId') ?? '')) setEditingId(null)

@@ -271,7 +271,7 @@ export function ChatInbox({ conversations }: { conversations: InboxConversation[
                       )}
                       <span className="truncate">{conv.contact ?? 'Anonymous visitor'}</span>
                     </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="shrink-0 text-xs text-muted-foreground" suppressHydrationWarning>
                       {formatRelative(conv.lastMessageAt)}
                     </span>
                   </div>
@@ -301,7 +301,7 @@ export function ChatInbox({ conversations }: { conversations: InboxConversation[
                     </>
                   )}
                 </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="mt-0.5 text-xs text-muted-foreground" suppressHydrationWarning>
                   {selected.trackTitle} · {selected.messageCount} messages · started{' '}
                   {new Date(selected.messages[0]?.createdAt ?? selected.lastMessageAt).toLocaleString()}
                 </p>

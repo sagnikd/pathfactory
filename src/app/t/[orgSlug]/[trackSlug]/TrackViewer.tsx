@@ -114,6 +114,13 @@ export default function TrackViewer({
     window.history.replaceState(null, '', url.toString())
   }, [effectiveIndex, layout])
 
+  // Keep browser tab title in sync with the currently viewed asset
+  useEffect(() => {
+    if (currentAsset) {
+      document.title = `${currentAsset.title} — ${track.title}`
+    }
+  }, [currentAsset, track.title])
+
   const progress = ((effectiveIndex + 1) / assets.length) * 100
 
   const handleNext = () => {
