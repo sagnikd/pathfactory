@@ -276,55 +276,43 @@ export async function buildSystemPrompt(
   trackAssets: Asset[],
   currentAsset?: Asset
 ): Promise<string> {
-  // Extract readable content (PDF text / YouTube transcript) — always the
-  // current asset first, then up to 2 more extractable assets.
-  const extractions = new Map<string, string>()
-  const extractable = trackAssets.filter(
-    (a) => a.type === 'pdf' || isPdfUrl(a.fileUrl ?? a.sourceUrl) || youTubeId(a.sourceUrl ?? a.fileUrl)
-  )
-  // Assets whose text is already cached are free to include — prioritize them
-  // (matters for experiences that aggregate many assets across child tracks).
-  const hasCache = (a: Asset) => {
-    const m = asRecord(a.metadataJson)
-    return typeof m.extractedText === 'string' && m.extractedText.length > 0
+  // Only extract the CURRENT asset's content — other track assets contribute
+  // title/type/metadata only. This prevents content from unrelated assets (e.g.
+  // a PDF whose author is "Paul Pisecco") from bleeding into answers about a
+  // different video the visitor is actively watching.
+  let currentText = ''
+  if (currentAsset) {
+    currentText = await extractAssetText(currentAsset)
   }
-  const cachedFirst = [...extractable].sort((a, b) => Number(hasCache(b)) - Number(hasCache(a)))
-  const ordered = currentAsset
-    ? [currentAsset, ...cachedFirst.filter((a) => a.id !== currentAsset.id)]
-    : cachedFirst
-  // Dedupe while preserving order, cap fetches to bound latency
-  const seen = new Set<string>()
-  const toFetch = ordered.filter((a) => {
-    if (seen.has(a.id)) return false
-    seen.add(a.id)
-    return a.type === 'pdf' || isPdfUrl(a.fileUrl ?? a.sourceUrl) || !!youTubeId(a.sourceUrl ?? a.fileUrl)
-  }).slice(0, 4)
 
-  await Promise.all(
-    toFetch.map(async (a) => {
-      const text = await extractAssetText(a)
-      if (text) extractions.set(a.id, text)
-    })
-  )
+  // Also pre-warm cache for other extractable assets in the background so
+  // future navigation is instant — but do NOT include their text in this prompt.
+  const othersToWarm = trackAssets
+    .filter((a) => a.id !== currentAsset?.id)
+    .filter((a) => a.type === 'pdf' || isPdfUrl(a.fileUrl ?? a.sourceUrl) || !!youTubeId(a.sourceUrl ?? a.fileUrl))
+    .slice(0, 3)
+  void Promise.all(othersToWarm.map((a) => extractAssetText(a).catch(() => '')))
 
   const currentSection = currentAsset
     ? [
         '',
-        `CURRENT ASSET THE VISITOR IS VIEWING:`,
+        `CURRENT ASSET THE VISITOR IS VIEWING (answer questions from this content):`,
         `  Title: ${currentAsset.title}`,
         `  Type:  ${currentAsset.type}`,
         currentAsset.description ? `  Description: ${currentAsset.description.slice(0, 300)}` : '',
-        extractions.get(currentAsset.id)
-          ? `  Content:\n${extractions.get(currentAsset.id)!.slice(0, 12000)}`
-          : '',
+        currentText
+          ? `  Full content (PDF text / video transcript):\n${currentText.slice(0, 15000)}`
+          : '  (no extractable text — use title and description only)',
         '',
       ]
         .filter(Boolean)
         .join('\n')
     : ''
 
+  // Other track assets: metadata only — so the AI knows what else is in the
+  // track for navigation hints but cannot mix their content into the current answer.
   const assetSection = trackAssets
-    .map((a, i) => assetLine(a, i, extractions.get(a.id)))
+    .map((a, i) => assetLine(a, i))
     .join('\n\n')
 
   const redirectLine = trackAssets.length
@@ -334,13 +322,13 @@ export async function buildSystemPrompt(
   return [
     `You are a content-guide assistant for ONE specific content track titled "${track.title}".`,
     'You are NOT a general-purpose assistant. You ONLY discuss this track and its assets.',
-    'You have no tools and no outside knowledge. The ONLY facts you may use are in the TRACK ASSETS section below.',
+    'The CURRENT ASSET section below contains the full text of what the visitor is watching/reading right now. Answer questions from THAT content first.',
     '',
-    'TRACK ASSETS:',
+    'OTHER ASSETS IN THIS TRACK (metadata only — do not invent their content):',
     assetSection,
     currentSection,
     'HARD RULES — follow exactly, no exceptions:',
-    '1. Before answering, search the TRACK ASSETS above for the answer. Questions about speakers, presenters, authors, or people mentioned in a video or document ARE answerable if their name appears in the content. Only refuse if the answer is genuinely absent from all the content above.',
+    '1. Answer from the CURRENT ASSET content above. Questions about speakers, presenters, authors, or people mentioned in the current asset ARE answerable if the name appears in its content. If the name is not in the content, say you cannot find it in this asset — do NOT pull names from other assets.',
     `2. For ANY off-topic question (weather, geography, math, news, coding, general trivia, pin/zip codes, other companies, anything not in the assets above), reply with EXACTLY this and nothing else: "${redirectLine}"`,
     '3. Answer ONLY using facts present in the TRACK ASSETS above. Never use outside knowledge for product claims, pricing, statistics, timelines, company facts, or definitions.',
     '4. Never invent asset titles, URLs, statistics, customer names, availability, or pricing. When citing an asset, use its exact title.',

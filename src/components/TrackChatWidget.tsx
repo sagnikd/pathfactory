@@ -111,6 +111,7 @@ export function TrackChatWidget({
   )
   const [showMeetingCta, setShowMeetingCta] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const prevAssetIdRef = useRef(currentAssetId)
 
   const {
     accentColor,
@@ -127,6 +128,20 @@ export function TrackChatWidget({
     if (!isOpen) return
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, isLoading, isOpen])
+
+  // Reset conversation context when the visitor navigates to a different asset
+  useEffect(() => {
+    if (prevAssetIdRef.current === currentAssetId) return
+    prevAssetIdRef.current = currentAssetId
+    setMessages(greeting ? [greeting] : [])
+    setAskedQuestions([])
+    setAskedCount(0)
+    setInputValue('')
+    setIsLoading(false)
+    setSuggestedQuestions(chatConfig.suggestedQuestions ?? [])
+    setShowMeetingCta(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAssetId])
 
   // Known visitor → proactively open the panel once to engage them
   useEffect(() => {
