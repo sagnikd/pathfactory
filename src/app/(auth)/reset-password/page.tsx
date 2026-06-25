@@ -18,22 +18,53 @@ function ResetPasswordForm() {
   const router       = useRouter()
   const searchParams = useSearchParams()
 
-  // Exchange the one-time code from the email link for a live session.
-  // Without this step Supabase has no session and updateUser fails.
+  // Establish a session from the recovery link. Supabase delivers the token in
+  // several shapes depending on project config, so handle them all:
+  //   ?code=...                        → PKCE, exchangeCodeForSession
+  //   ?token_hash=...&type=recovery    → verifyOtp
+  //   #access_token=...&type=recovery  → auto-detected by supabase-js (hash)
   useEffect(() => {
-    const code = searchParams.get('code')
-    if (!code) {
-      setError('Invalid or expired reset link. Please request a new one.')
-      return
-    }
     const supabase = createClient()
-    supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-      if (error) {
-        setError('This reset link has expired or already been used. Please request a new one.')
-      } else {
-        setReady(true)
-      }
+    const expired = 'This reset link is invalid, expired, or already used. Please request a new one.'
+
+    // Hash-token links are auto-detected by supabase-js and fire an auth event
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) setReady(true)
     })
+
+    ;(async () => {
+      const code = searchParams.get('code')
+      const tokenHash = searchParams.get('token_hash')
+      const type = searchParams.get('type')
+
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) setError(expired); else setReady(true)
+        return
+      }
+      if (tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({
+          type: (type as 'recovery') || 'recovery',
+          token_hash: tokenHash,
+        })
+        if (error) setError(expired); else setReady(true)
+        return
+      }
+      // No query token — maybe a hash-based link; give supabase-js a moment to
+      // detect it, then check for a live session.
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        setReady(true)
+      } else {
+        setTimeout(async () => {
+          const { data: retry } = await supabase.auth.getSession()
+          if (retry.session) setReady(true)
+          else setError('Invalid or expired reset link. Please request a new one.')
+        }, 600)
+      }
+    })()
+
+    return () => sub.subscription.unsubscribe()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: React.FormEvent) {
