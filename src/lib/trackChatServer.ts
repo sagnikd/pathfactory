@@ -48,12 +48,15 @@ async function extractYouTubeTranscript(url: string): Promise<string> {
       .join(' ')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 6000)
+      .slice(0, 20000)
   } catch (err) {
     console.error('[yt-transcript] failed:', err)
     return ''
   }
 }
+
+// Bump this when extraction limits change — forces re-extraction of all cached assets.
+const EXTRACT_VERSION = 2
 
 // Extract readable text from any supported asset (PDF file/URL or YouTube video).
 // Caches the result in assets.metadataJson.extractedText so each asset is only
@@ -62,12 +65,13 @@ async function extractAssetText(asset: Asset): Promise<string> {
   const url = asset.fileUrl ?? asset.sourceUrl
   if (!url) return ''
 
-  // 1. Serve from cache when present
+  // 1. Serve from cache when present AND up-to-date version
   const meta = (asset.metadataJson && typeof asset.metadataJson === 'object'
     ? (asset.metadataJson as Record<string, unknown>)
     : {})
   const cached = meta.extractedText
-  if (typeof cached === 'string' && cached.length > 0) return cached
+  const cachedVersion = typeof meta.extractedVersion === 'number' ? meta.extractedVersion : 1
+  if (typeof cached === 'string' && cached.length > 0 && cachedVersion >= EXTRACT_VERSION) return cached
 
   // 2. Extract fresh
   let text = ''
@@ -79,7 +83,7 @@ async function extractAssetText(asset: Asset): Promise<string> {
   try {
     await db
       .update(assets)
-      .set({ metadataJson: { ...meta, extractedText: text, extractedAt: new Date().toISOString() } })
+      .set({ metadataJson: { ...meta, extractedText: text, extractedAt: new Date().toISOString(), extractedVersion: EXTRACT_VERSION } })
       .where(eq(assets.id, asset.id))
   } catch (err) {
     console.error('[asset-extract] cache write failed:', err)
@@ -258,7 +262,7 @@ function assetLine(asset: Asset, index: number, pdfText?: string): string {
     parts.push(`   Tags: ${tags.join(', ')}`)
   }
   if (pdfText) {
-    parts.push(`   Content (extracted text / video transcript):\n${pdfText.slice(0, 2200)}`)
+    parts.push(`   Content (extracted text / video transcript):\n${pdfText.slice(0, 4000)}`)
   }
   const url = asset.sourceUrl ?? asset.fileUrl
   if (url) {
@@ -311,7 +315,7 @@ export async function buildSystemPrompt(
         `  Type:  ${currentAsset.type}`,
         currentAsset.description ? `  Description: ${currentAsset.description.slice(0, 300)}` : '',
         extractions.get(currentAsset.id)
-          ? `  Content:\n${extractions.get(currentAsset.id)!.slice(0, 4000)}`
+          ? `  Content:\n${extractions.get(currentAsset.id)!.slice(0, 12000)}`
           : '',
         '',
       ]
@@ -349,5 +353,5 @@ export async function buildSystemPrompt(
     `For the off-topic ones, your entire reply is: "${redirectLine}"`,
   ]
     .join('\n')
-    .slice(0, 14000)
+    .slice(0, 28000)
 }
