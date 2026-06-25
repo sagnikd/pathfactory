@@ -1,8 +1,19 @@
 'use client'
 
-import { useState } from 'react'
-import { MessageSquare, Mail, User, Download } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { MessageSquare, Mail, User, Download, CalendarIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+const PRESETS = [
+  { label: 'Last 7 days', days: 7 },
+  { label: 'Last 30 days', days: 30 },
+  { label: 'Last 90 days', days: 90 },
+  { label: 'All time', days: 0 },
+]
+
+function toDateInput(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 export type InboxMessage = {
   role: string
@@ -66,15 +77,51 @@ function toQaRows(conv: InboxConversation): Record<string, string>[] {
 }
 
 export function ChatInbox({ conversations }: { conversations: InboxConversation[] }) {
-  const [selectedId, setSelectedId] = useState<string | null>(conversations[0]?.id ?? null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState(false)
-  const selected = conversations.find((c) => c.id === selectedId) ?? null
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [today] = useState(() => new Date())
 
-  const allChecked = conversations.length > 0 && checked.size === conversations.length
+  // Filter by lastMessageAt within [from, to] (inclusive)
+  const filtered = useMemo(() => {
+    const fromMs = from ? new Date(from + 'T00:00:00').getTime() : null
+    const toMs = to ? new Date(to + 'T23:59:59').getTime() : null
+    return conversations.filter((c) => {
+      const t = new Date(c.lastMessageAt).getTime()
+      if (fromMs !== null && t < fromMs) return false
+      if (toMs !== null && t > toMs) return false
+      return true
+    })
+  }, [conversations, from, to])
+
+  const [selectedId, setSelectedId] = useState<string | null>(conversations[0]?.id ?? null)
+  const selected = filtered.find((c) => c.id === selectedId) ?? filtered[0] ?? null
+
+  const activePreset = (() => {
+    if (!from && !to) return 0
+    const f = from ? new Date(from + 'T00:00:00').getTime() : null
+    if (f === null) return -1
+    const diff = Math.round((today.getTime() - f) / 86_400_000)
+    const p = PRESETS.find((p) => p.days !== 0 && Math.abs(diff - p.days) <= 1)
+    return p ? p.days : -1
+  })()
+
+  function applyPreset(days: number) {
+    if (days === 0) {
+      setFrom(''); setTo('')
+    } else {
+      const start = new Date(today)
+      start.setDate(today.getDate() - days)
+      setFrom(toDateInput(start)); setTo(toDateInput(today))
+    }
+    setChecked(new Set())
+  }
+
+  const allChecked = filtered.length > 0 && filtered.every((c) => checked.has(c.id))
 
   function toggleAll() {
-    setChecked(allChecked ? new Set() : new Set(conversations.map((c) => c.id)))
+    setChecked(allChecked ? new Set() : new Set(filtered.map((c) => c.id)))
   }
 
   function toggleOne(id: string) {
@@ -89,8 +136,8 @@ export function ChatInbox({ conversations }: { conversations: InboxConversation[
   async function exportToExcel() {
     setExporting(true)
     try {
-      // Export checked conversations, or all when none are checked
-      const target = checked.size > 0 ? conversations.filter((c) => checked.has(c.id)) : conversations
+      // Export checked conversations, or all currently-filtered when none checked
+      const target = checked.size > 0 ? filtered.filter((c) => checked.has(c.id)) : filtered
       const rows = target.flatMap(toQaRows)
 
       const XLSX = await import('xlsx')
@@ -125,6 +172,45 @@ export function ChatInbox({ conversations }: { conversations: InboxConversation[
 
   return (
     <div className="space-y-3">
+      {/* Date-range filter */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 rounded-lg border bg-muted/40 p-1">
+          {PRESETS.map((p) => (
+            <button
+              key={p.days}
+              onClick={() => applyPreset(p.days)}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                activePreset === p.days
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 text-sm">
+          <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            type="date"
+            value={from}
+            max={to || toDateInput(today)}
+            onChange={(e) => { setFrom(e.target.value); setChecked(new Set()) }}
+            className="h-8 rounded-md border bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#30B2BF]/30"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <input
+            type="date"
+            value={to}
+            min={from}
+            max={toDateInput(today)}
+            onChange={(e) => { setTo(e.target.value); setChecked(new Set()) }}
+            className="h-8 rounded-md border bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#30B2BF]/30"
+          />
+        </div>
+      </div>
+
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -134,11 +220,11 @@ export function ChatInbox({ conversations }: { conversations: InboxConversation[
             onChange={toggleAll}
             className="h-4 w-4 rounded border-input accent-[#30B2BF]"
           />
-          {checked.size > 0 ? `${checked.size} selected` : 'Select all'}
+          {checked.size > 0 ? `${checked.size} selected` : `Select all (${filtered.length})`}
         </label>
         <button
           onClick={exportToExcel}
-          disabled={exporting}
+          disabled={exporting || filtered.length === 0}
           className="inline-flex items-center gap-2 rounded-lg bg-[#30B2BF] px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#2a9faa] disabled:opacity-60"
         >
           <Download className="h-4 w-4" />
@@ -146,14 +232,17 @@ export function ChatInbox({ conversations }: { conversations: InboxConversation[
             ? 'Exporting…'
             : checked.size > 0
               ? `Export ${checked.size} to Excel`
-              : 'Export all to Excel'}
+              : `Export ${filtered.length} to Excel`}
         </button>
       </div>
 
       <div className="flex h-[calc(100vh-260px)] min-h-[480px] overflow-hidden rounded-lg border">
         {/* Conversation list */}
         <div className="w-80 shrink-0 overflow-y-auto border-r bg-muted/20">
-          {conversations.map((conv) => {
+          {filtered.length === 0 && (
+            <p className="p-4 text-center text-sm text-muted-foreground">No chats in this date range.</p>
+          )}
+          {filtered.map((conv) => {
             const active = conv.id === selectedId
             const isChecked = checked.has(conv.id)
             return (
