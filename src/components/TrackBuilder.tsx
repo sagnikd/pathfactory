@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import {
   FileText, Video, Link2, Image as ImageIcon,
-  Plus, Loader2, GripVertical, X, Mail, ChevronRight,
+  Plus, Loader2, GripVertical, X, Mail, ChevronRight, MessageSquare,
 } from 'lucide-react'
 import { createTrack, updateTrack } from '@/app/dashboard/tracks/actions'
 import type { LeadField, GateConfig } from '@/components/GateOverlay'
@@ -34,9 +34,16 @@ type TrackData = {
   status: 'draft' | 'published'
   assetIds: string[]
   gateConfigJson?: GateConfig | null
-  themeJson?: {
+  themeJson?: ({
     seoTitle?: string
-  } | null
+    chat?: {
+      enabled?: boolean
+      assistantName?: string
+      meetingUrl?: string
+      meetingCtaLabel?: string
+      meetingCtaThreshold?: number
+    }
+  } & Record<string, unknown>) | null
 }
 
 const DEFAULT_LEAD_FIELDS: LeadField[] = [
@@ -76,6 +83,15 @@ export function TrackBuilder({
   const [importedAssets, setImportedAssets] = useState<Asset[]>([])
   const [seoTitle, setSeoTitle] = useState(initialTrack?.themeJson?.seoTitle ?? '')
   const [isPending, startTransition] = useTransition()
+
+  // ── Chat assistant config ────────────────────────────────────────────────
+  const existingChat = initialTrack?.themeJson?.chat
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatEnabled, setChatEnabled] = useState<boolean>(existingChat?.enabled !== false)
+  const [chatName, setChatName] = useState(existingChat?.assistantName ?? 'AI Assistant')
+  const [chatMeetingUrl, setChatMeetingUrl] = useState(existingChat?.meetingUrl ?? '')
+  const [chatMeetingLabel, setChatMeetingLabel] = useState(existingChat?.meetingCtaLabel ?? 'Book a meeting')
+  const [chatThreshold, setChatThreshold] = useState<number>(existingChat?.meetingCtaThreshold ?? 3)
 
   // ── Lead capture config ──────────────────────────────────────────────────
   const existingGate = initialTrack?.gateConfigJson
@@ -199,8 +215,18 @@ export function TrackBuilder({
       description: lcDescription,
       fields: lcFields,
     }
+    const trimmedMeetingUrl = chatMeetingUrl.trim()
     const themeJson = {
+      // Preserve any existing themeJson fields (leadScoring, experience config, etc.)
+      ...(initialTrack?.themeJson ?? {}),
       seoTitle: seoTitle.trim() || null,
+      chat: {
+        enabled: chatEnabled,
+        assistantName: chatName.trim() || 'AI Assistant',
+        meetingUrl: trimmedMeetingUrl.startsWith('https://') ? trimmedMeetingUrl : undefined,
+        meetingCtaLabel: chatMeetingLabel.trim() || 'Book a meeting',
+        meetingCtaThreshold: chatThreshold,
+      },
     }
     startTransition(async () => {
       if (initialTrack?.id) {
@@ -583,6 +609,105 @@ export function TrackBuilder({
                     </div>
                   </div>
                 </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Chat Assistant Config ───────────────────────────────────────── */}
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setChatOpen(o => !o)}
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/40 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${chatEnabled ? 'bg-primary/10' : 'bg-muted'}`}>
+              <MessageSquare className={`w-4 h-4 ${chatEnabled ? 'text-primary' : 'text-muted-foreground'}`} />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-semibold">Chat Assistant</p>
+              <p className="text-xs text-muted-foreground">
+                {chatEnabled
+                  ? `${chatName || 'AI Assistant'}${chatMeetingUrl.trim() ? ` · meeting CTA after ${chatThreshold} Qs` : ''}`
+                  : 'Disabled'}
+              </p>
+            </div>
+          </div>
+          <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${chatOpen ? 'rotate-90' : ''}`} />
+        </button>
+
+        {chatOpen && (
+          <div className="border-t px-5 pb-6 pt-5 space-y-5">
+            {/* Enable toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Enable chat assistant</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Show the AI chat widget on this track&apos;s public page</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChatEnabled(v => !v)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${chatEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${chatEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {chatEnabled && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="chat-name">Assistant name</Label>
+                  <Input
+                    id="chat-name"
+                    placeholder="AI Assistant"
+                    value={chatName}
+                    onChange={(e) => setChatName(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="chat-meeting-url">Meeting booking URL <span className="text-muted-foreground font-normal">(optional, https only)</span></Label>
+                  <Input
+                    id="chat-meeting-url"
+                    placeholder="https://calendar.app.google/..."
+                    value={chatMeetingUrl}
+                    onChange={(e) => setChatMeetingUrl(e.target.value)}
+                  />
+                  {chatMeetingUrl.trim() && !chatMeetingUrl.trim().startsWith('https://') && (
+                    <p className="text-xs text-destructive">URL must start with https://</p>
+                  )}
+                </div>
+
+                {chatMeetingUrl.trim().startsWith('https://') && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="chat-meeting-label">Meeting button label</Label>
+                      <Input
+                        id="chat-meeting-label"
+                        placeholder="Book a meeting"
+                        value={chatMeetingLabel}
+                        onChange={(e) => setChatMeetingLabel(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="chat-threshold">Show meeting card after</Label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          id="chat-threshold"
+                          type="range"
+                          min={1}
+                          max={6}
+                          value={chatThreshold}
+                          onChange={(e) => setChatThreshold(Number(e.target.value))}
+                          className="flex-1 accent-primary"
+                        />
+                        <span className="text-sm font-medium w-20 text-right">{chatThreshold} question{chatThreshold === 1 ? '' : 's'}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>

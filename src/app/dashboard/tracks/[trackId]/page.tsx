@@ -72,9 +72,9 @@ export default async function EditTrackPage({
           layout: track.layout,
           status: track.status,
           assetIds,
-          themeJson: (track.themeJson as {
+          themeJson: (track.themeJson as ({
             seoTitle?: string
-          } | null) ?? null,
+          } & Record<string, unknown>) | null) ?? null,
           gateConfigJson: track.gateConfigJson as null | {
             enabled: boolean
             delaySeconds: number
