@@ -32,7 +32,9 @@ export function getTrackChatConfig(themeJson: unknown): TrackChatConfig {
   const theme = asRecord(themeJson)
   const chat = asRecord(theme.chat)
 
-  const enabled = chat.enabled === true
+  // Default ON — chat shows on every track/experience unless explicitly
+  // disabled with themeJson.chat.enabled === false
+  const enabled = chat.enabled !== false
 
   const meetingUrl = isValidHttpsUrl(chat.meetingUrl) ? (chat.meetingUrl as string) : undefined
 
