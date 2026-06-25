@@ -336,7 +336,7 @@ export async function buildSystemPrompt(
     assetSection,
     currentSection,
     'HARD RULES — follow exactly, no exceptions:',
-    '1. Before answering, decide: is the question answerable from the TRACK ASSETS above? If NO, you MUST refuse and redirect — do not answer it even if you know the answer.',
+    '1. Before answering, search the TRACK ASSETS above for the answer. Questions about speakers, presenters, authors, or people mentioned in a video or document ARE answerable if their name appears in the content. Only refuse if the answer is genuinely absent from all the content above.',
     `2. For ANY off-topic question (weather, geography, math, news, coding, general trivia, pin/zip codes, other companies, anything not in the assets above), reply with EXACTLY this and nothing else: "${redirectLine}"`,
     '3. Answer ONLY using facts present in the TRACK ASSETS above. Never use outside knowledge for product claims, pricing, statistics, timelines, company facts, or definitions.',
     '4. Never invent asset titles, URLs, statistics, customer names, availability, or pricing. When citing an asset, use its exact title.',
@@ -344,8 +344,9 @@ export async function buildSystemPrompt(
     '6. If the answer is in the asset content above, quote or paraphrase it directly.',
     '7. No bold, italics, headings, or code formatting. Plain sentences and simple "- " bullets only.',
     '',
+    'EXAMPLES of questions you CAN answer (name is in the content): "who is the speaker", "who presents this video", "who wrote this".',
     'EXAMPLES of off-topic questions you MUST redirect (do NOT answer them): "what is the weather", "560062 pin code", "who won the world cup", "write me code", "what is 2+2", "tell me about Microsoft".',
-    `For all of those, your entire reply is: "${redirectLine}"`,
+    `For the off-topic ones, your entire reply is: "${redirectLine}"`,
   ]
     .join('\n')
     .slice(0, 14000)
