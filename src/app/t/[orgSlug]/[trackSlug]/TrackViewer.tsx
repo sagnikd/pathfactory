@@ -284,6 +284,7 @@ export default function TrackViewer({
       <TrackChatWidget
         trackId={track.id}
         sessionId={sessionId}
+        visitorName={isKnownVisitor ? returningVisitorName : null}
         currentAssetId={currentAsset?.id}
         chatConfig={getTrackChatConfig(track.themeJson)}
       />

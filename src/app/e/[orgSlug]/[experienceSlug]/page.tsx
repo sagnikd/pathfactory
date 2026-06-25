@@ -180,7 +180,7 @@ export default async function PublicExperiencePage({
 
   // Open a visitor session for this experience so chat conversations link to
   // a visitor and any captured contact (mirrors the track viewer).
-  const { sessionId } = await ensureVisitorSession(experience.id)
+  const { sessionId, visitorName } = await ensureVisitorSession(experience.id)
 
   return (
     <>
@@ -203,6 +203,7 @@ export default async function PublicExperiencePage({
       <TrackChatWidget
         trackId={experience.id}
         sessionId={sessionId}
+        visitorName={visitorName}
         chatConfig={getTrackChatConfig(experience.themeJson)}
       />
     </>

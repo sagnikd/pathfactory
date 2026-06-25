@@ -19,6 +19,7 @@ interface TrackChatWidgetProps {
     suggestedQuestions?: string[]
   }
   sessionId?: string | null
+  visitorName?: string | null
 }
 
 type ChatMessage = {
@@ -88,10 +89,19 @@ export function TrackChatWidget({
   currentAssetId,
   chatConfig,
   sessionId,
+  visitorName,
 }: TrackChatWidgetProps) {
+  const firstName = visitorName?.trim().split(/\s+/)[0] || null
+  const greeting: ChatMessage | null = firstName
+    ? {
+        role: 'assistant',
+        content: `Hi ${firstName} 👋 I'm ${chatConfig.assistantName}. Ask me anything about this track.`,
+      }
+    : null
+
   const [isOpen, setIsOpen] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>(greeting ? [greeting] : [])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [askedQuestions, setAskedQuestions] = useState<string[]>([])
