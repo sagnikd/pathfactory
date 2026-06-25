@@ -128,6 +128,19 @@ export function TrackChatWidget({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, isLoading, isOpen])
 
+  // Known visitor → proactively open the panel once to engage them
+  useEffect(() => {
+    if (!firstName) return
+    const dismissed = typeof window !== 'undefined' && sessionStorage.getItem('trackChatAutoOpened') === '1'
+    if (dismissed) return
+    const t = setTimeout(() => {
+      setIsOpen(true)
+      try { sessionStorage.setItem('trackChatAutoOpened', '1') } catch {}
+    }, 1800)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   if (!chatConfig.enabled) return null
 
   async function sendQuestion(question?: string) {
