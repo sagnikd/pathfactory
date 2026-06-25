@@ -66,17 +66,15 @@ export default function TrackViewer({
     initializeTracking().then(() => setTrackingInitialized(true))
   }, [])
 
-  // 1. Client-side geo lookup (visitor's own IP — no shared server rate-limit).
-  // 2. Store geo in session.deviceJson via /api/session-geo.
+  // Client-side geo lookup (visitor's own IP — no shared server rate-limit),
+  // persisted to session.deviceJson via /api/session-geo so the end-of-session
+  // summary email can report the visitor's company/location.
   useEffect(() => {
     if (!sessionId) return
 
     ;(async () => {
       try {
-        // Resolve geo client-side first (visitor's IP, not Netlify's)
         const geo = await clientGeoLookup()
-
-        // Persist geo to DB (passes resolved values so server skips its own lookup)
         await fetch('/api/session-geo', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -87,22 +85,43 @@ export default function TrackViewer({
             company: geo.company,
           }),
         })
-
-        // Notify the org admin by email only after the visitor has actually
-        // dwelled. Fire at 75 s so >= 60 s of dwell ticks are recorded; the API
-        // re-checks real dwell (>= 60 s) before sending. Fire-and-forget.
-        setTimeout(() => {
-          fetch('/api/visitor-notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId }),
-          }).catch(() => {})
-        }, 75_000)
       } catch {
         // Best-effort — never block the visitor
       }
     })()
   }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Send a single end-of-session summary email when the visitor leaves the page
+  // (tab close, navigation, or backgrounding). Uses sendBeacon so the request
+  // survives page teardown. The API atomically claims the session so duplicate
+  // beacons (visibilitychange + pagehide) only ever send one email; it also
+  // applies its own "meaningful engagement" threshold before emailing.
+  useEffect(() => {
+    if (!sessionId) return
+    let sent = false
+
+    const sendSummary = () => {
+      if (sent) return
+      sent = true
+      try {
+        const blob = new Blob([JSON.stringify({ sessionId })], { type: 'application/json' })
+        navigator.sendBeacon('/api/session-summary', blob)
+      } catch {
+        // Best-effort
+      }
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') sendSummary()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', sendSummary)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', sendSummary)
+    }
+  }, [sessionId])
 
   // view event now fired by AssetViewer after 15 s of active engagement
 
