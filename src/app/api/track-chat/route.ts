@@ -155,6 +155,26 @@ function stripMarkdown(text: string): string {
     .trim()
 }
 
+// Enforce brevity: drop trailing "want me to…/I can also…" offers, cap to 3 bullets
+function tightenAnswer(text: string): string {
+  const lines = text.split('\n')
+  const out: string[] = []
+  let bullets = 0
+  for (const line of lines) {
+    const t = line.trim()
+    // Strip self-promotion / follow-up offer lines
+    if (/^(if you want|i can also|want me to|would you like|let me know)/i.test(t)) continue
+    if (/^•\s/.test(t)) {
+      bullets++
+      if (bullets > 3) continue
+      out.push(line)
+    } else {
+      out.push(line)
+    }
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 function extractOutputText(data: unknown): string {
   if (!isRecord(data)) return ''
   if (typeof data.output_text === 'string') return data.output_text
@@ -265,7 +285,7 @@ async function callOpenAI(
 
     const rawText = extractOutputText(await response.json())
     // Clean markdown, keep line breaks; cap generously so answers aren't cut mid-thought
-    const answer = stripMarkdown(rawText).slice(0, 1600) ||
+    const answer = tightenAnswer(stripMarkdown(rawText)).slice(0, 1600) ||
       'I can help — please ask a more specific question about this track.'
     return {
       answer,

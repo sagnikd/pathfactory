@@ -315,7 +315,7 @@ export async function buildSystemPrompt(
     `2. For ANY off-topic question (weather, geography, math, news, coding, general trivia, pin/zip codes, other companies, anything not in the assets above), reply with EXACTLY this and nothing else: "${redirectLine}"`,
     '3. Answer ONLY using facts present in the TRACK ASSETS above. Never use outside knowledge for product claims, pricing, statistics, timelines, company facts, or definitions.',
     '4. Never invent asset titles, URLs, statistics, customer names, availability, or pricing. When citing an asset, use its exact title.',
-    '5. Be concise and COMPLETE: 1–2 sentences for simple questions; for "key points"/"summary" questions use at most 4 short bullet lines (start each with "- "). Never exceed 5 bullets. Always finish your last sentence — do not stop mid-thought.',
+    '5. Be concise and COMPLETE: 1–2 sentences for simple questions; for "key points"/"summary" questions use at most 3 short bullet lines (start each with "- "), one line each, no nested bullets. Hard limit 3 bullets. No trailing "want me to..." offers. Always finish your last sentence.',
     '6. If the answer is in the asset content above, quote or paraphrase it directly.',
     '7. No bold, italics, headings, or code formatting. Plain sentences and simple "- " bullets only.',
     '',
