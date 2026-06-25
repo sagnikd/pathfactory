@@ -222,7 +222,7 @@ export function ChatInbox({ conversations }: { conversations: InboxConversation[
                   <div key={i} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
                     <div
                       className={cn(
-                        'max-w-[75%] rounded-2xl px-3.5 py-2 text-sm',
+                        'max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed',
                         m.role === 'user'
                           ? 'bg-[#30B2BF] text-white'
                           : 'border bg-background text-foreground'

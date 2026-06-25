@@ -137,22 +137,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-// Flatten markdown to plain prose: drop bold/italics/headings, turn bullet
-// and numbered lists into a single comma-joined sentence flow.
+// Clean markdown to readable plain text: drop bold/italics/headings, normalize
+// list bullets to "• " on their own lines, and preserve line breaks (the UI
+// renders them with white-space: pre-wrap).
 function stripMarkdown(text: string): string {
   return text
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/`(.*?)`/g, '$1')
     .replace(/^#{1,6}\s*/gm, '')
-    // List items → separate clauses so they don't run together when flattened
-    .replace(/\n\s*[-*•]\s+/g, '; ')
-    .replace(/\n\s*\d+\.\s+/g, '; ')
-    .replace(/^\s*[-*•]\s+/, '')
-    .replace(/^\s*\d+\.\s+/, '')
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/\s+;/g, ';')
+    // Normalize bullet / numbered list markers to a clean "• " bullet
+    .replace(/^\s*[-*•]\s+/gm, '• ')
+    .replace(/^\s*\d+\.\s+/gm, '• ')
+    // Collapse 3+ blank lines, trim trailing spaces per line
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
 
@@ -250,7 +249,7 @@ async function callOpenAI(
         model,
         instructions: systemPrompt,
         input: message,
-        max_output_tokens: 400,
+        max_output_tokens: 700,
         store: false,
       }),
     })
@@ -265,8 +264,8 @@ async function callOpenAI(
     }
 
     const rawText = extractOutputText(await response.json())
-    // Strip markdown (bold, bullets, headings) → plain prose, then collapse
-    const answer = stripMarkdown(rawText).slice(0, 700) ||
+    // Clean markdown, keep line breaks; cap generously so answers aren't cut mid-thought
+    const answer = stripMarkdown(rawText).slice(0, 1600) ||
       'I can help — please ask a more specific question about this track.'
     return {
       answer,
