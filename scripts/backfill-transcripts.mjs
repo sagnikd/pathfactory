@@ -65,9 +65,22 @@ async function extractPdfText(url) {
   return merged.replace(/\s+/g, ' ').trim().slice(0, PDF_LIMIT)
 }
 
+let _proxyFetch
+async function getProxyFetch() {
+  if (_proxyFetch !== undefined) return _proxyFetch
+  const proxyUrl = process.env.YOUTUBE_PROXY_URL?.trim()
+  if (!proxyUrl) { _proxyFetch = null; return null }
+  const { ProxyAgent } = await import('undici')
+  const agent = new ProxyAgent(proxyUrl)
+  _proxyFetch = (input, init) => fetch(input, { ...(init ?? {}), dispatcher: agent })
+  return _proxyFetch
+}
+
 async function extractYouTubeTranscript(url) {
   const { YoutubeTranscript } = await import('youtube-transcript')
-  const segments = await YoutubeTranscript.fetchTranscript(url)
+  const proxyFetch = await getProxyFetch()
+  const config = proxyFetch ? { fetch: proxyFetch } : undefined
+  const segments = await YoutubeTranscript.fetchTranscript(url, config)
   return segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim().slice(0, YT_LIMIT)
 }
 

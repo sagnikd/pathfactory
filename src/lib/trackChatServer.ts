@@ -39,10 +39,42 @@ async function extractPdfText(url: string): Promise<string> {
   }
 }
 
+// Build a fetch that egresses through a residential proxy, if configured.
+// YouTube blocks transcript requests from datacenter IPs (Netlify), so in
+// production we route them through a residential/rotating proxy via
+// YOUTUBE_PROXY_URL (e.g. http://user:pass@gate.smartproxy.com:7000).
+// Returns undefined when no proxy is set — caller falls back to direct fetch.
+let cachedProxyFetch: typeof fetch | null | undefined
+async function getProxyFetch(): Promise<typeof fetch | undefined> {
+  if (cachedProxyFetch !== undefined) return cachedProxyFetch ?? undefined
+  const proxyUrl = process.env.YOUTUBE_PROXY_URL?.trim()
+  if (!proxyUrl) {
+    cachedProxyFetch = null
+    return undefined
+  }
+  try {
+    const { ProxyAgent } = await import('undici')
+    const agent = new ProxyAgent(proxyUrl)
+    // Node's global fetch (undici) accepts a per-request `dispatcher`.
+    const proxyFetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+      fetch(input, { ...(init ?? {}), dispatcher: agent } as RequestInit)) as typeof fetch
+    cachedProxyFetch = proxyFetch
+    return proxyFetch
+  } catch (err) {
+    console.error('[yt-transcript] proxy init failed:', err)
+    cachedProxyFetch = null
+    return undefined
+  }
+}
+
 async function extractYouTubeTranscript(url: string): Promise<string> {
   try {
     const { YoutubeTranscript } = await import('youtube-transcript')
-    const segments = await YoutubeTranscript.fetchTranscript(url)
+    const proxyFetch = await getProxyFetch()
+    // youtube-transcript honors config.fetch for every request it makes, so
+    // routing it through the proxy makes the whole flow egress residentially.
+    const config = proxyFetch ? ({ fetch: proxyFetch } as unknown as undefined) : undefined
+    const segments = await YoutubeTranscript.fetchTranscript(url, config)
     return segments
       .map((s) => s.text)
       .join(' ')
