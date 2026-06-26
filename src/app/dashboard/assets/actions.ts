@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm'
 import * as cheerio from 'cheerio'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 import { createClient as createSupabaseClient } from '@/lib/supabase/server'
+import { warmAssetExtraction } from '@/lib/trackChatServer'
 
 // Download external image and re-host in own Supabase Storage.
 // Returns the self-hosted public URL, or the original if anything fails.
@@ -187,6 +188,11 @@ export async function addUrlAsset(organizationId: string, url: string) {
       }
     }
 
+    // Capture transcript / PDF text now while the server is on a residential IP
+    // (local dev, or prod with YOUTUBE_PROXY_URL). Awaited so it completes
+    // before the serverless function ends; never blocks success on failure.
+    await warmAssetExtraction(asset.id).catch(() => {})
+
     revalidatePath('/dashboard/assets')
     return { success: true, asset }
   } catch (error: unknown) {
@@ -239,6 +245,9 @@ export async function addFileAsset(
       fileUrl: fileData.fileUrl,
       thumbnailUrl: fileData.thumbnailUrl ?? null,
     }).returning()
+
+    // Extract PDF text now (uploaded PDFs are on Supabase — not IP-blocked).
+    await warmAssetExtraction(asset.id).catch(() => {})
 
     revalidatePath('/dashboard/assets')
     return { success: true, asset }

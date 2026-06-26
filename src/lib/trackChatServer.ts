@@ -134,6 +134,42 @@ async function extractAssetText(asset: Asset): Promise<string> {
   return text
 }
 
+/**
+ * Extract and cache an asset's transcript / text by id. Called at asset-creation
+ * time (from the dashboard "add asset" actions) so the transcript is captured
+ * immediately while the server is on a residential IP (local dev, or production
+ * with YOUTUBE_PROXY_URL set). YouTube blocks datacenter IPs, so capturing at
+ * add-time — when the admin's own machine runs the action in dev — is the free
+ * path that avoids the Netlify block entirely.
+ *
+ * Best-effort: returns the number of characters cached (0 if nothing extracted).
+ * Never throws — a failed extraction must not break asset creation.
+ */
+export async function warmAssetExtraction(assetId: string): Promise<number> {
+  try {
+    const [row] = await db
+      .select({
+        id: assets.id,
+        title: assets.title,
+        type: assets.type,
+        description: assets.description,
+        sourceUrl: assets.sourceUrl,
+        fileUrl: assets.fileUrl,
+        thumbnailUrl: assets.thumbnailUrl,
+        metadataJson: assets.metadataJson,
+      })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .limit(1)
+    if (!row) return 0
+    const text = await extractAssetText(row as Asset)
+    return text.length
+  } catch (err) {
+    console.error('[warm-extract] failed:', err)
+    return 0
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
