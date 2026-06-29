@@ -152,6 +152,8 @@ export default async function PublicExperiencePage({
   const assetsRows = await db.select({
     trackId: trackAssets.trackId,
     position: trackAssets.position,
+    displayTitle: trackAssets.displayTitle,
+    subCopy: trackAssets.subCopy,
     asset: assets,
   })
   .from(trackAssets)
@@ -172,6 +174,8 @@ export default async function PublicExperiencePage({
     headline: theme?.sectionHeadlines?.[track.id]?.trim() || track.title,
     assets: (assetsByTrack[track.id] ?? []).map((row) => ({
       ...row.asset,
+      displayTitle: row.displayTitle ?? null,
+      subCopy: row.subCopy ?? null,
       tags: extractTags(row.asset.metadataJson),
       trackId: track.id,
       trackTitle: track.title,

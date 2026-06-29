@@ -29,11 +29,20 @@ export default async function EditTrackPage({
     .where(eq(assets.organizationId, dbUser.organizationId))
     .orderBy(desc(assets.createdAt))
 
-  const orderedTrackAssets = await db.select().from(trackAssets)
+  const orderedTrackAssets = await db.select({
+    assetId: trackAssets.assetId,
+    displayTitle: trackAssets.displayTitle,
+    subCopy: trackAssets.subCopy,
+  }).from(trackAssets)
     .where(eq(trackAssets.trackId, trackId))
     .orderBy(asc(trackAssets.position))
 
   const assetIds = orderedTrackAssets.map((ta) => ta.assetId)
+  const assetOverrides = Object.fromEntries(
+    orderedTrackAssets
+      .filter((ta) => ta.displayTitle || ta.subCopy)
+      .map((ta) => [ta.assetId, { displayTitle: ta.displayTitle ?? undefined, subCopy: ta.subCopy ?? undefined }])
+  )
 
   return (
     <div className="space-y-6">
@@ -72,6 +81,7 @@ export default async function EditTrackPage({
           layout: track.layout,
           status: track.status,
           assetIds,
+          assetOverrides,
           themeJson: (track.themeJson as ({
             seoTitle?: string
           } & Record<string, unknown>) | null) ?? null,

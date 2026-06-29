@@ -101,7 +101,9 @@ export default async function PublicTrackPage({
   // Fetch assets via join
   const trackAssetsData = await db.select({
     asset: assets,
-    position: trackAssets.position
+    position: trackAssets.position,
+    displayTitle: trackAssets.displayTitle,
+    subCopy: trackAssets.subCopy,
   })
   .from(trackAssets)
   .innerJoin(assets, eq(trackAssets.assetId, assets.id))
@@ -114,11 +116,10 @@ export default async function PublicTrackPage({
   const sortedAssets = trackAssetsData.map((ta) => {
     const asset = ta.asset
     const meta = asset.metadataJson
-    if (meta && typeof meta === 'object' && !Array.isArray(meta) && 'extractedText' in meta) {
-      const { extractedText: _drop, extractedAt: _drop2, ...rest } = meta as Record<string, unknown>
-      return { ...asset, metadataJson: rest }
-    }
-    return asset
+    const stripped = (meta && typeof meta === 'object' && !Array.isArray(meta) && 'extractedText' in meta)
+      ? (() => { const { extractedText: _d, extractedAt: _d2, ...rest } = meta as Record<string, unknown>; return rest })()
+      : meta
+    return { ...asset, metadataJson: stripped, displayTitle: ta.displayTitle ?? null, subCopy: ta.subCopy ?? null }
   })
 
   // Visitor & Session Setup

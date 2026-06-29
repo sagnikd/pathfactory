@@ -90,6 +90,8 @@ export const trackAssets = pgTable("track_assets", {
   trackId: uuid("track_id").references(() => tracks.id, { onDelete: "cascade" }).notNull(),
   assetId: uuid("asset_id").references(() => assets.id, { onDelete: "cascade" }).notNull(),
   position: integer("position").notNull(),
+  displayTitle: text("display_title"),
+  subCopy: text("sub_copy"),
 }, (table) => {
   return {
     pk: primaryKey({ columns: [table.trackId, table.assetId] }),

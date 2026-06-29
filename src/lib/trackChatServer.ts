@@ -162,7 +162,7 @@ export async function warmAssetExtraction(assetId: string): Promise<number> {
       .where(eq(assets.id, assetId))
       .limit(1)
     if (!row) return 0
-    const text = await extractAssetText(row as Asset)
+    const text = await extractAssetText({ ...row, displayTitle: null, subCopy: null } as Asset)
     return text.length
   } catch (err) {
     console.error('[warm-extract] failed:', err)
@@ -177,6 +177,8 @@ export async function warmAssetExtraction(assetId: string): Promise<number> {
 export type Asset = {
   id: string
   title: string
+  displayTitle: string | null
+  subCopy: string | null
   type: 'pdf' | 'video' | 'article' | 'image'
   description: string | null
   sourceUrl: string | null
@@ -269,6 +271,8 @@ export async function fetchTrackContext(trackId: string): Promise<TrackContext |
     .select({
       id: assets.id,
       title: assets.title,
+      displayTitle: trackAssets.displayTitle,
+      subCopy: trackAssets.subCopy,
       type: assets.type,
       description: assets.description,
       sourceUrl: assets.sourceUrl,
@@ -301,6 +305,8 @@ export async function fetchTrackContext(trackId: string): Promise<TrackContext |
     assets: uniqueAssetRows.map((row) => ({
       id: row.id,
       title: row.title,
+      displayTitle: row.displayTitle ?? null,
+      subCopy: row.subCopy ?? null,
       type: row.type,
       description: cleanText(row.description, 600),
       sourceUrl: cleanText(row.sourceUrl, 500),
@@ -332,7 +338,7 @@ export function isTrackGated(themeJson: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 function assetLine(asset: Asset, index: number, pdfText?: string): string {
-  const parts: string[] = [`${index + 1}. "${asset.title}" [${asset.type}]`]
+  const parts: string[] = [`${index + 1}. "${asset.displayTitle ?? asset.title}" [${asset.type}]`]
   if (asset.description) {
     parts.push(`   Description: ${asset.description.slice(0, 300)}`)
   }

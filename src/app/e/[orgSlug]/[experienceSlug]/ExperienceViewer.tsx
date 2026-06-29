@@ -6,6 +6,8 @@ import { Search } from 'lucide-react'
 type AssetCard = {
   id: string
   title: string
+  displayTitle?: string | null
+  subCopy?: string | null
   type: 'pdf' | 'video' | 'article' | 'image'
   thumbnailUrl: string | null
   sourceUrl: string | null
@@ -112,7 +114,7 @@ export default function ExperienceViewer({
   const openTrackPopup = (asset: AssetCard, section: TrackSection) => {
     setActiveTrack({
       url: `/t/${orgSlug}/${section.slug}?assetId=${asset.id}`,
-      assetTitle: asset.title,
+      assetTitle: asset.displayTitle ?? asset.title,
       trackTitle: section.title,
     })
   }
@@ -253,7 +255,8 @@ export default function ExperienceViewer({
                             )}
                           </div>
                           <div className="p-3 space-y-2">
-                            <p className="text-sm font-medium line-clamp-2">{asset.title}</p>
+                            <p className="text-sm font-medium line-clamp-2">{asset.displayTitle ?? asset.title}</p>
+                            {asset.subCopy && <p className="text-xs text-muted-foreground line-clamp-2">{asset.subCopy}</p>}
                             <div className="flex flex-wrap gap-1">
                               {(asset.tags.length > 0 ? [...new Set(asset.tags)].slice(0, 3) : [asset.type.toUpperCase()]).map((tag) => (
                                 <span
@@ -304,7 +307,8 @@ export default function ExperienceViewer({
                         )}
                       </div>
                       <div className="p-3 space-y-2">
-                        <p className="text-sm font-medium line-clamp-2">{asset.title}</p>
+                        <p className="text-sm font-medium line-clamp-2">{asset.displayTitle ?? asset.title}</p>
+                        {asset.subCopy && <p className="text-xs text-muted-foreground line-clamp-2">{asset.subCopy}</p>}
                         <div className="flex flex-wrap gap-1">
                           {(asset.tags.length > 0 ? asset.tags.slice(0, 3) : [asset.type.toUpperCase()]).map((tag) => (
                             <span

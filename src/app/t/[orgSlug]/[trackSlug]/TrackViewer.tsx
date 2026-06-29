@@ -16,6 +16,8 @@ type TrackViewerProps = {
   assets: Array<{
     id: string
     title: string
+    displayTitle?: string | null
+    subCopy?: string | null
     type?: 'pdf' | 'video' | 'article' | 'image'
     thumbnailUrl?: string | null
     sourceUrl?: string | null
@@ -136,7 +138,7 @@ export default function TrackViewer({
   // Keep browser tab title in sync with the currently viewed asset
   useEffect(() => {
     if (currentAsset) {
-      document.title = `${currentAsset.title} — ${track.title}`
+      document.title = `${currentAsset.displayTitle ?? currentAsset.title} — ${track.title}`
     }
   }, [currentAsset, track.title])
 
@@ -227,8 +229,11 @@ export default function TrackViewer({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className={`font-medium text-sm line-clamp-2 ${active ? 'text-primary' : 'text-foreground'}`}>
-                        {asset.title}
+                        {asset.displayTitle ?? asset.title}
                       </div>
+                      {asset.subCopy && (
+                        <div className="text-xs text-foreground/70 line-clamp-2 mt-0.5 leading-snug">{asset.subCopy}</div>
+                      )}
                       <div className="mt-2 flex flex-wrap gap-1">
                         {(tags.length > 0 ? tags.slice(0, 3) : [fallbackTag]).map((tag) => (
                           <span

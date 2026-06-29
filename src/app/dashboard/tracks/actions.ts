@@ -61,10 +61,12 @@ function slugify(text: string) {
     .substring(0, 64)
 }
 
+type AssetEntry = { assetId: string; displayTitle?: string | null; subCopy?: string | null }
+
 export async function createTrack(
   orgId: string,
   data: { title: string; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
-  assetIds: string[],
+  assetEntries: AssetEntry[],
   gateConfigJson?: object | null,
   themeJson?: object | null
 ) {
@@ -80,9 +82,15 @@ export async function createTrack(
     themeJson: themeJson ?? null,
   }).returning()
 
-  if (assetIds.length > 0) {
+  if (assetEntries.length > 0) {
     await db.insert(trackAssets).values(
-      assetIds.map((assetId, i) => ({ trackId: track.id, assetId, position: i }))
+      assetEntries.map((e, i) => ({
+        trackId: track.id,
+        assetId: e.assetId,
+        position: i,
+        displayTitle: e.displayTitle ?? null,
+        subCopy: e.subCopy ?? null,
+      }))
     )
   }
 
@@ -93,7 +101,7 @@ export async function createTrack(
 export async function updateTrack(
   trackId: string,
   data: { title: string; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
-  assetIds: string[],
+  assetEntries: AssetEntry[],
   gateConfigJson?: object | null,
   themeJson?: object | null
 ) {
@@ -110,9 +118,15 @@ export async function updateTrack(
 
   await db.delete(trackAssets).where(eq(trackAssets.trackId, trackId))
 
-  if (assetIds.length > 0) {
+  if (assetEntries.length > 0) {
     await db.insert(trackAssets).values(
-      assetIds.map((assetId, i) => ({ trackId, assetId, position: i }))
+      assetEntries.map((e, i) => ({
+        trackId,
+        assetId: e.assetId,
+        position: i,
+        displayTitle: e.displayTitle ?? null,
+        subCopy: e.subCopy ?? null,
+      }))
     )
   }
 

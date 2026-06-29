@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import {
   FileText, Video, Link2, Image as ImageIcon,
-  Plus, Loader2, GripVertical, X, Mail, ChevronRight, MessageSquare,
+  Plus, Loader2, GripVertical, X, Mail, ChevronRight, MessageSquare, Pencil,
 } from 'lucide-react'
 import { createTrack, updateTrack } from '@/app/dashboard/tracks/actions'
 import type { LeadField, GateConfig } from '@/components/GateOverlay'
@@ -27,12 +27,15 @@ type Asset = {
   sourceUrl: string | null
 }
 
+type AssetOverride = { displayTitle?: string; subCopy?: string }
+
 type TrackData = {
   id?: string
   title: string
   layout: 'binge' | 'hub' | 'single'
   status: 'draft' | 'published'
   assetIds: string[]
+  assetOverrides?: Record<string, AssetOverride>
   gateConfigJson?: GateConfig | null
   themeJson?: ({
     seoTitle?: string
@@ -80,6 +83,8 @@ export function TrackBuilder({
   const [layout, setLayout] = useState<TrackData['layout']>(initialTrack?.layout ?? 'binge')
   const [status, setStatus] = useState<TrackData['status']>(initialTrack?.status ?? 'draft')
   const [selectedIds, setSelectedIds] = useState<string[]>(initialTrack?.assetIds ?? [])
+  const [overrides, setOverrides] = useState<Record<string, AssetOverride>>(initialTrack?.assetOverrides ?? {})
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [importedAssets, setImportedAssets] = useState<Asset[]>([])
   const [seoTitle, setSeoTitle] = useState(initialTrack?.themeJson?.seoTitle ?? '')
   const [isPending, startTransition] = useTransition()
@@ -228,11 +233,16 @@ export function TrackBuilder({
         meetingCtaThreshold: chatThreshold,
       },
     }
+    const assetEntries = selectedIds.map((id) => ({
+      assetId: id,
+      displayTitle: overrides[id]?.displayTitle?.trim() || null,
+      subCopy: overrides[id]?.subCopy?.trim() || null,
+    }))
     startTransition(async () => {
       if (initialTrack?.id) {
-        await updateTrack(initialTrack.id, { title, layout, status }, selectedIds, gateConfigJson, themeJson)
+        await updateTrack(initialTrack.id, { title, layout, status }, assetEntries, gateConfigJson, themeJson)
       } else {
-        await createTrack(orgId, { title, layout, status }, selectedIds, gateConfigJson, themeJson)
+        await createTrack(orgId, { title, layout, status }, assetEntries, gateConfigJson, themeJson)
       }
     })
   }
@@ -321,35 +331,74 @@ export function TrackBuilder({
               {trackAssets.map((asset, i) => (
                 <div
                   key={asset.id}
-                  draggable
-                  onDragStart={() => handleDragStart(i)}
-                  onDragOver={(e) => handleDragOver(e, i)}
-                  onDrop={() => handleDrop(i)}
-                  onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors ${
-                    dragOver === i ? 'border-primary bg-primary/5' : 'bg-muted/30'
+                  className={`rounded-lg border overflow-hidden transition-colors ${
+                    dragOver === i ? 'border-primary' : ''
                   }`}
                 >
-                  <span className="text-xs text-muted-foreground w-5 text-center shrink-0">{i + 1}</span>
-                  <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab active:cursor-grabbing" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <AssetIcon type={asset.type} />
-                      <span className="text-sm font-medium truncate">{asset.title}</span>
+                  <div
+                    draggable
+                    onDragStart={() => handleDragStart(i)}
+                    onDragOver={(e) => handleDragOver(e, i)}
+                    onDrop={() => handleDrop(i)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 px-3 py-2.5 transition-colors ${
+                      dragOver === i ? 'bg-primary/5' : 'bg-muted/30'
+                    }`}
+                  >
+                    <span className="text-xs text-muted-foreground w-5 text-center shrink-0">{i + 1}</span>
+                    <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab active:cursor-grabbing" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <AssetIcon type={asset.type} />
+                        <span className="text-sm font-medium truncate">
+                          {overrides[asset.id]?.displayTitle || asset.title}
+                        </span>
+                      </div>
+                      {overrides[asset.id]?.subCopy ? (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5 italic">{overrides[asset.id].subCopy}</p>
+                      ) : asset.sourceUrl ? (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{asset.sourceUrl}</p>
+                      ) : null}
                     </div>
-                    {asset.sourceUrl && (
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{asset.sourceUrl}</p>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => setExpandedId(expandedId === asset.id ? null : asset.id)}
+                        className={`p-1 rounded transition-colors ${expandedId === asset.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground'}`}
+                        title="Customize title & sub copy"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => removeAsset(asset.id)}
+                        className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
+                        title="Remove"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => removeAsset(asset.id)}
-                      className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
-                      title="Remove"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  {expandedId === asset.id && (
+                    <div className="px-3 pb-3 pt-2 border-t bg-muted/10 space-y-2">
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Display title</label>
+                        <Input
+                          value={overrides[asset.id]?.displayTitle ?? ''}
+                          onChange={(e) => setOverrides((prev) => ({ ...prev, [asset.id]: { ...prev[asset.id], displayTitle: e.target.value } }))}
+                          placeholder={asset.title}
+                          className="h-7 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Sub copy</label>
+                        <Input
+                          value={overrides[asset.id]?.subCopy ?? ''}
+                          onChange={(e) => setOverrides((prev) => ({ ...prev, [asset.id]: { ...prev[asset.id], subCopy: e.target.value } }))}
+                          placeholder="Optional subtitle shown below the title"
+                          className="h-7 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
