@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import ExperienceViewer from './ExperienceViewer'
 import { TrackChatWidget } from '@/components/TrackChatWidget'
 import { SessionSignals } from '@/components/SessionSignals'
+import { CookieBanner } from '@/components/CookieBanner'
 import { getTrackChatConfig } from '@/lib/trackChatConfig'
 import { ensureVisitorSession } from '@/lib/visitorSession'
 
@@ -213,6 +214,7 @@ export default async function PublicExperiencePage({
       />
       {/* Geo capture + end-of-session summary email beacon */}
       <SessionSignals sessionId={sessionId} />
+      <CookieBanner />
     </>
   )
 }

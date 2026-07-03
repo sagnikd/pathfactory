@@ -4,6 +4,7 @@ import { organizations, tracks, trackAssets, assets, sessions, visitors, leads }
 import { eq, and, asc, desc } from 'drizzle-orm'
 import { cookies, headers } from 'next/headers'
 import TrackViewer from './TrackViewer'
+import { CookieBanner } from '@/components/CookieBanner'
 import { lookupIp } from '@/lib/ipLookup'
 import type { Metadata } from 'next'
 
@@ -239,6 +240,7 @@ export default async function PublicTrackPage({
           return 0
         })()}
       />
+      <CookieBanner />
     </div>
   )
 }
