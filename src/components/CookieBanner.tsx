@@ -3,16 +3,19 @@
 import { useState, useEffect } from 'react'
 
 const CONSENT_KEY = 'cookie_consent_v1'
+const CONSENT_TTL_MS = 1000 * 60 * 60 * 24 * 30 * 6 // 6 months
 
 export function CookieBanner() {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    if (!localStorage.getItem(CONSENT_KEY)) setVisible(true)
+    const acceptedAt = Number(localStorage.getItem(CONSENT_KEY) ?? 0)
+    const expired = !acceptedAt || Date.now() - acceptedAt > CONSENT_TTL_MS
+    if (expired) setVisible(true)
   }, [])
 
   function accept() {
-    localStorage.setItem(CONSENT_KEY, 'accepted')
+    localStorage.setItem(CONSENT_KEY, String(Date.now()))
     setVisible(false)
   }
 
