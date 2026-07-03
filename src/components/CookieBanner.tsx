@@ -22,11 +22,12 @@ export function CookieBanner() {
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur shadow-lg px-4 py-4 sm:px-6">
       <div className="mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center gap-4">
         <p className="text-xs text-muted-foreground flex-1">
-          We use cookies to personalize your experience and analyze site usage.
-          By clicking &ldquo;Accept All Cookies&rdquo; you agree to the storing of cookies on your device.
-          For more information see the{' '}
+          We use cookies for the best user experience on our website, including to personalize content &amp; offerings,
+          to provide social media features and to analyze traffic. By clicking &ldquo;Accept All Cookies&rdquo; you agree
+          to our use of cookies. You can also manage your cookies by clicking on the &ldquo;Cookie Preferences&rdquo; and
+          selecting the categories you would like to accept. For more information on how we use cookies please visit our{' '}
           <a
-            href="https://www.hcl-software.com/statement/cookie-statement"
+            href="https://www.hcl-software.com/legal/cookie-disclosure"
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-foreground"
@@ -35,7 +36,7 @@ export function CookieBanner() {
           </a>{' '}
           and{' '}
           <a
-            href="https://www.hcl-software.com/statement/privacy-statement"
+            href="https://www.hcl-software.com/legal/privacy"
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-foreground"
@@ -45,6 +46,14 @@ export function CookieBanner() {
           .
         </p>
         <div className="flex items-center gap-3 shrink-0">
+          <a
+            href="https://www.hcl-software.com/legal/cookie-disclosure"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-semibold underline hover:text-foreground text-muted-foreground"
+          >
+            Cookie Settings
+          </a>
           <button
             onClick={accept}
             className="rounded px-4 py-2 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
