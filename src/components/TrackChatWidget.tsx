@@ -251,7 +251,7 @@ export function TrackChatWidget({
         }
       `}</style>
 
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+      <div className="fixed bottom-20 right-4 z-50 flex flex-col items-end">
         {isOpen && (
           <div
             className="mb-3 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl transition-all duration-200"
