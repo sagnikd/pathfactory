@@ -4,6 +4,7 @@ import { leads, visitors } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { computeLeadScores } from '@/lib/leadScore'
 import { processAbmLeadMatch } from '@/lib/abm'
+import { isPersonalEmail } from '@/lib/workEmail'
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +18,9 @@ export async function POST(req: Request) {
     const email: string = (fields as Record<string, string>).email ?? ''
     if (!email) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 })
+    }
+    if (isPersonalEmail(email)) {
+      return NextResponse.json({ error: 'Please enter your work email address.' }, { status: 422 })
     }
 
     // Compute score from real engagement history up to this moment

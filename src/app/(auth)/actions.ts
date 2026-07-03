@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { db } from '@/db'
 import { pendingSignups } from '@/db/schema'
 import { eq } from 'drizzle-orm'
+import { isPersonalEmail } from '@/lib/workEmail'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -30,6 +31,10 @@ export async function signup(formData: FormData) {
 
   const email    = (formData.get('email')    as string).trim().toLowerCase()
   const password =  formData.get('password') as string
+
+  if (isPersonalEmail(email)) {
+    redirect('/signup?error=' + encodeURIComponent('Please use your work email address to sign up.'))
+  }
 
   const { data: authData, error } = await supabase.auth.signUp({ email, password })
 

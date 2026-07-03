@@ -350,7 +350,8 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
         setShowForm(false)
         onSubmit?.(values)
       } else {
-        setError('Something went wrong. Please try again.')
+        const body = await res.json().catch(() => ({}))
+        setError(body.error ?? 'Something went wrong. Please try again.')
       }
     } catch {
       setError('Could not submit. Check your connection.')
