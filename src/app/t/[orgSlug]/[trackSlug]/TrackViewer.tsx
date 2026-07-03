@@ -64,6 +64,12 @@ export default function TrackViewer({
   // Fields submitted via the gate form on this session (first-time visitors)
   const [submittedFields, setSubmittedFields] = useState<Record<string, string> | null>(null)
 
+  const chatConfig = getTrackChatConfig(track.themeJson)
+  // Incremented each time the visitor clicks "Summarize" on the current asset —
+  // TrackChatWidget watches this to pop open and ask for a summary.
+  const [summarizeToken, setSummarizeToken] = useState(0)
+  const handleSummarize = () => setSummarizeToken((t) => t + 1)
+
   useEffect(() => {
     initializeTracking().then(() => setTrackingInitialized(true))
   }, [])
@@ -268,7 +274,7 @@ export default function TrackViewer({
                 asset={currentAsset}
                 sessionId={sessionId}
                 gateCleared={gateCleared}
-                onComplete={handleNext}
+                onSummarize={chatConfig.enabled ? handleSummarize : undefined}
               />
             </GateOverlay>
           </div>
@@ -288,7 +294,7 @@ export default function TrackViewer({
               asset={currentAsset}
               sessionId={sessionId}
               gateCleared={gateCleared}
-              onComplete={layout === 'binge' ? handleNext : undefined}
+              onSummarize={chatConfig.enabled ? handleSummarize : undefined}
             />
           </GateOverlay>
         </main>
@@ -318,7 +324,8 @@ export default function TrackViewer({
         sessionId={sessionId}
         visitorName={isKnownVisitor ? returningVisitorName : null}
         currentAssetId={currentAsset?.id}
-        chatConfig={getTrackChatConfig(track.themeJson)}
+        chatConfig={chatConfig}
+        summarizeToken={summarizeToken}
       />
     </div>
   )

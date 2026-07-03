@@ -5,7 +5,7 @@ import { trackEvent } from '@/lib/tracking'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Sparkles } from 'lucide-react'
 
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
@@ -61,14 +61,7 @@ function formatTime(secs: number): string {
 
 // ─── Root viewer ─────────────────────────────────────────────────────────────
 
-export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }: any) {
-  const [showCountdown, setShowCountdown] = useState(false)
-  const [countdown, setCountdown] = useState(3)
-
-  const handleAssetComplete = () => {
-    if (onComplete) { setShowCountdown(true); setCountdown(3) }
-  }
-
+export function AssetViewer({ asset, sessionId, onSummarize, gateCleared = true }: any) {
   // ── Dwell-time tracking ──────────────────────────────────────────────────
   // Emit a `dwell_tick` every 10 s only while ALL of:
   //   1. Tab is visible (visibilitychange)
@@ -161,64 +154,34 @@ export function AssetViewer({ asset, sessionId, onComplete, gateCleared = true }
   }, [asset.id, sessionId])
   // ────────────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (!showCountdown) return
-    if (countdown > 0) {
-      const t = setTimeout(() => setCountdown(c => c - 1), 1000)
-      return () => clearTimeout(t)
-    }
-    setShowCountdown(false)
-    onComplete()
-  }, [showCountdown, countdown, onComplete])
-
   const sourceUrl: string = asset.fileUrl || asset.sourceUrl || ''
   const treatAsCloudinaryVideo = asset.type === 'article' && isCloudinaryPlayerUrl(sourceUrl)
 
   return (
     <div className="relative w-full h-full">
-      {(asset.type === 'video' || treatAsCloudinaryVideo) && <VideoViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
-      {asset.type === 'pdf'     && <PdfViewer     asset={asset} sessionId={sessionId} gateCleared={gateCleared} onComplete={handleAssetComplete} />}
-      {asset.type === 'article' && /\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <PdfViewer asset={asset} sessionId={sessionId} gateCleared={gateCleared} onComplete={handleAssetComplete} />}
-      {asset.type === 'article' && !treatAsCloudinaryVideo && !/\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <ArticleViewer asset={asset} sessionId={sessionId} onComplete={handleAssetComplete} />}
-      {asset.type === 'image'   && <ImageViewer   asset={asset}                       onComplete={handleAssetComplete} />}
-
-      {showCountdown && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-6">
-          <p className="text-xl sm:text-2xl font-bold text-center px-4">Up next in {countdown}…</p>
-          <div className="flex flex-col sm:flex-row w-full max-w-xs sm:max-w-none sm:w-auto gap-3 px-4">
-            <button
-              onClick={() => { setShowCountdown(false); onComplete() }}
-              className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm"
-            >
-              Skip wait
-            </button>
-            <button
-              onClick={() => setShowCountdown(false)}
-              className="w-full sm:w-auto px-5 py-2.5 bg-muted text-foreground rounded-lg font-medium text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {(asset.type === 'video' || treatAsCloudinaryVideo) && <VideoViewer asset={asset} sessionId={sessionId} onSummarize={onSummarize} />}
+      {asset.type === 'pdf'     && <PdfViewer     asset={asset} sessionId={sessionId} gateCleared={gateCleared} onSummarize={onSummarize} />}
+      {asset.type === 'article' && /\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <PdfViewer asset={asset} sessionId={sessionId} gateCleared={gateCleared} onSummarize={onSummarize} />}
+      {asset.type === 'article' && !treatAsCloudinaryVideo && !/\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <ArticleViewer asset={asset} sessionId={sessionId} onSummarize={onSummarize} />}
+      {asset.type === 'image'   && <ImageViewer   asset={asset}                       onSummarize={onSummarize} />}
     </div>
   )
 }
 
 // ─── Video viewer (YouTube / Vimeo / direct file) ────────────────────────────
 
-function VideoViewer({ asset, sessionId, onComplete }: any) {
+function VideoViewer({ asset, sessionId, onSummarize }: any) {
   const raw: string = asset.fileUrl || asset.sourceUrl || ''
   const isYouTube = raw.includes('youtube.com') || raw.includes('youtu.be')
   const isVimeo   = raw.includes('vimeo.com')
   const isCloudinary = isCloudinaryPlayerUrl(raw)
 
   if (isCloudinary) {
-    return <CloudinaryViewer url={raw} asset={asset} sessionId={sessionId} onComplete={onComplete} />
+    return <CloudinaryViewer url={raw} asset={asset} sessionId={sessionId} onSummarize={onSummarize} />
   }
 
   if (isYouTube) {
-    return <YouTubeViewer url={raw} asset={asset} sessionId={sessionId} onComplete={onComplete} />
+    return <YouTubeViewer url={raw} asset={asset} sessionId={sessionId} onSummarize={onSummarize} />
   }
 
   if (isVimeo || isCloudinary) {
@@ -233,13 +196,14 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
             allowFullScreen
           />
         </div>
-        {onComplete && (
+        {onSummarize && (
           <div className="shrink-0 bg-background border-t flex items-center justify-end px-3 sm:px-4 py-2">
             <button
-              onClick={() => { trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' }); onComplete() }}
-              className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+              onClick={() => { trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' }); onSummarize() }}
+              className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
             >
-              Mark complete &amp; continue
+              <Sparkles className="h-4 w-4" />
+              Summarize
             </button>
           </div>
         )}
@@ -256,13 +220,13 @@ function VideoViewer({ asset, sessionId, onComplete }: any) {
         className="max-w-full max-h-full"
         onPlay={() => trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })}
         onPause={() => trackEvent({ sessionId, assetId: asset.id, eventType: 'video_pause' })}
-        onEnded={() => { trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' }); onComplete?.() }}
+        onEnded={() => { trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' }); onSummarize?.() }}
       />
     </div>
   )
 }
 
-function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
+function CloudinaryViewer({ url, asset, sessionId, onSummarize }: any) {
   const storageKey = `cloudinary-time-${asset.id}`
   const initialSavedTime = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
   const [resumeFrom, setResumeFrom] = useState(initialSavedTime)
@@ -294,7 +258,7 @@ function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
     if (timerRef.current) clearInterval(timerRef.current)
     localStorage.removeItem(storageKey)
     trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
-    onComplete?.()
+    onSummarize?.()
   }
 
   const handleReplayFromStart = () => {
@@ -328,7 +292,7 @@ function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
           onLoad={handleLoad}
         />
       </div>
-      {onComplete && (
+      {onSummarize && (
         <div className="shrink-0 bg-background border-t flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 px-3 sm:px-4 py-2">
           <button
             onClick={handleReplayFromStart}
@@ -338,9 +302,10 @@ function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
           </button>
           <button
             onClick={handleContinue}
-            className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
           >
-            Mark complete &amp; continue
+            <Sparkles className="h-4 w-4" />
+            Summarize
           </button>
         </div>
       )}
@@ -354,7 +319,7 @@ function CloudinaryViewer({ url, asset, sessionId, onComplete }: any) {
 // A plain <iframe> is owned by React — no external mutations, no crashes, no
 // black screen. Position is saved via wall-clock estimation (±5 s accuracy).
 
-function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
+function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
   const storageKey  = `yt-time-${asset.id}`
   const savedTime   = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
   const loadedAtRef = useRef(0)
@@ -401,18 +366,19 @@ function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
         allowFullScreen
         onLoad={handleLoad}
       />
-      {onComplete && (
+      {onSummarize && (
         <div className="shrink-0 bg-background border-t flex items-center justify-end px-3 sm:px-4 py-2">
           <button
             onClick={() => {
               clearInterval(timerRef.current!)
               localStorage.removeItem(storageKey)
               trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
-              onComplete()
+              onSummarize()
             }}
-            className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
           >
-            Mark complete &amp; continue
+            <Sparkles className="h-4 w-4" />
+            Summarize
           </button>
         </div>
       )}
@@ -422,7 +388,7 @@ function YouTubeViewer({ url, asset, sessionId, onComplete }: any) {
 
 // ─── PDF viewer ──────────────────────────────────────────────────────────────
 
-function PdfViewer({ asset, sessionId, onComplete, gateCleared = true }: any) {
+function PdfViewer({ asset, sessionId, onSummarize, gateCleared = true }: any) {
   const [numPages, setNumPages] = useState<number>(0)
   const [scrollPct, setScrollPct] = useState(0)
   const [resumed, setResumed] = useState(false)
@@ -527,11 +493,12 @@ function PdfViewer({ asset, sessionId, onComplete, gateCleared = true }: any) {
             </a>
           )}
           <button
-            onClick={() => onComplete?.()}
-            disabled={!onComplete}
-            className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+            onClick={() => onSummarize?.()}
+            disabled={!onSummarize}
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium disabled:opacity-50"
           >
-            {onComplete ? 'Finish document' : 'Finish document (single layout)'}
+            <Sparkles className="h-4 w-4" />
+            Summarize
           </button>
         </div>
       </div>
@@ -541,7 +508,7 @@ function PdfViewer({ asset, sessionId, onComplete, gateCleared = true }: any) {
 
 // ─── Article viewer ──────────────────────────────────────────────────────────
 
-function ArticleViewer({ asset, sessionId, onComplete }: any) {
+function ArticleViewer({ asset, sessionId, onSummarize }: any) {
   const [iframeBlocked, setIframeBlocked] = useState(false)
   const url: string = asset.sourceUrl || ''
 
@@ -574,11 +541,12 @@ function ArticleViewer({ asset, sessionId, onComplete }: any) {
         <button
           onClick={() => {
             trackEvent({ sessionId, assetId: asset.id, eventType: 'scroll_100' })
-            onComplete?.()
+            onSummarize?.()
           }}
-          className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+          className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
         >
-          Mark as read
+          <Sparkles className="h-4 w-4" />
+          Summarize
         </button>
       </div>
     </div>
@@ -587,7 +555,7 @@ function ArticleViewer({ asset, sessionId, onComplete }: any) {
 
 // ─── Image viewer ─────────────────────────────────────────────────────────────
 
-function ImageViewer({ asset, onComplete }: any) {
+function ImageViewer({ asset, onSummarize }: any) {
   return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-muted/10 p-8">
       <div className="flex-1 flex items-center justify-center overflow-hidden w-full">
@@ -599,10 +567,11 @@ function ImageViewer({ asset, onComplete }: any) {
       </div>
       <div className="shrink-0 mt-8">
         <button
-          onClick={onComplete}
-          className="w-full sm:w-auto px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+          onClick={onSummarize}
+          className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
         >
-          Continue
+          <Sparkles className="h-4 w-4" />
+          Summarize
         </button>
       </div>
     </div>

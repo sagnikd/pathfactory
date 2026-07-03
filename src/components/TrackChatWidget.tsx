@@ -20,6 +20,7 @@ interface TrackChatWidgetProps {
   }
   sessionId?: string | null
   visitorName?: string | null
+  summarizeToken?: number
 }
 
 type ChatMessage = {
@@ -90,6 +91,7 @@ export function TrackChatWidget({
   chatConfig,
   sessionId,
   visitorName,
+  summarizeToken,
 }: TrackChatWidgetProps) {
   const firstName = visitorName?.trim().split(/\s+/)[0] || null
   const greeting: ChatMessage | null = firstName
@@ -112,6 +114,7 @@ export function TrackChatWidget({
   const [showMeetingCta, setShowMeetingCta] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevAssetIdRef = useRef(currentAssetId)
+  const prevSummarizeTokenRef = useRef(summarizeToken)
 
   const {
     accentColor,
@@ -155,6 +158,16 @@ export function TrackChatWidget({
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Visitor clicked "Summarize" on the current asset — pop the panel open and
+  // ask the assistant for a summary, as if they'd typed the question themselves.
+  useEffect(() => {
+    if (summarizeToken === undefined || prevSummarizeTokenRef.current === summarizeToken) return
+    prevSummarizeTokenRef.current = summarizeToken
+    setIsOpen(true)
+    sendQuestion('Summarize this asset for me.')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summarizeToken])
 
   if (!chatConfig.enabled) return null
 
