@@ -33,7 +33,7 @@ export default async function SignupPage({
             <li className="flex items-center gap-2"><span className="text-white">✓</span> Measure every scroll & click</li>
           </ul>
         </div>
-        <p className="text-white/40 text-xs">© 2025 Content Engagement Platform</p>
+        <p className="text-white/40 text-xs">© 2026 Content Engagement Platform</p>
       </div>
 
       {/* Right form panel */}

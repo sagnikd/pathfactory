@@ -33,7 +33,7 @@ export default async function LoginPage({
             <span>✓ Capture leads</span>
           </div>
         </div>
-        <p className="text-white/40 text-xs">© 2025 Content Engagement Platform</p>
+        <p className="text-white/40 text-xs">© 2026 Content Engagement Platform</p>
       </div>
 
       {/* Right form panel */}
