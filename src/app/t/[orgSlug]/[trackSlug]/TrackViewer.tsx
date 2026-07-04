@@ -436,15 +436,19 @@ export default function TrackViewer({
           </GateOverlay>
 
           {layout === 'binge' && prevAsset && (
-            <div className="group absolute left-3 top-1/2 -translate-y-1/2 z-20">
+            <div className="group absolute left-3 top-1/2 -translate-y-1/2 z-20 flex items-center gap-3">
               <button
                 onClick={handlePrevious}
                 aria-label="Previous asset"
-                className="w-11 h-11 rounded-full bg-background/85 backdrop-blur border shadow-md flex items-center justify-center text-foreground hover:bg-background transition-colors"
+                className="w-11 h-11 shrink-0 rounded-full bg-background/85 backdrop-blur border shadow-md flex items-center justify-center text-foreground hover:bg-background transition-colors"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 w-72 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-150 rounded-xl border bg-background/95 backdrop-blur shadow-xl overflow-hidden">
+              <button
+                onClick={handlePrevious}
+                aria-label={`Go to previous asset: ${prevAsset.displayTitle ?? prevAsset.title}`}
+                className="w-72 text-left opacity-0 group-hover:opacity-100 transition-opacity duration-150 rounded-xl border bg-background/95 backdrop-blur shadow-xl overflow-hidden hover:border-primary/40"
+              >
                 <div className="w-full h-36 bg-muted shrink-0">
                   {assetThumb(prevAsset) ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -455,20 +459,24 @@ export default function TrackViewer({
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Previous</p>
                   <p className="text-sm font-semibold line-clamp-2 mt-0.5">{prevAsset.displayTitle ?? prevAsset.title}</p>
                 </div>
-              </div>
+              </button>
             </div>
           )}
 
           {layout === 'binge' && nextAsset && (
-            <div className="group absolute right-3 top-1/2 -translate-y-1/2 z-20">
+            <div className="group absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-row-reverse items-center gap-3">
               <button
                 onClick={handleNext}
                 aria-label="Next asset"
-                className="w-11 h-11 rounded-full bg-background/85 backdrop-blur border shadow-md flex items-center justify-center text-foreground hover:bg-background transition-colors"
+                className="w-11 h-11 shrink-0 rounded-full bg-background/85 backdrop-blur border shadow-md flex items-center justify-center text-foreground hover:bg-background transition-colors"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
-              <div className="absolute right-full top-1/2 -translate-y-1/2 mr-3 w-72 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-150 rounded-xl border bg-background/95 backdrop-blur shadow-xl overflow-hidden">
+              <button
+                onClick={handleNext}
+                aria-label={`Go to next asset: ${nextAsset.displayTitle ?? nextAsset.title}`}
+                className="w-72 text-left opacity-0 group-hover:opacity-100 transition-opacity duration-150 rounded-xl border bg-background/95 backdrop-blur shadow-xl overflow-hidden hover:border-primary/40"
+              >
                 <div className="w-full h-36 bg-muted shrink-0">
                   {assetThumb(nextAsset) ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -479,7 +487,7 @@ export default function TrackViewer({
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Next</p>
                   <p className="text-sm font-semibold line-clamp-2 mt-0.5">{nextAsset.displayTitle ?? nextAsset.title}</p>
                 </div>
-              </div>
+              </button>
             </div>
           )}
         </main>
