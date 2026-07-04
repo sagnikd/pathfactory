@@ -50,6 +50,37 @@ function isValidHttpsUrl(value: string | undefined): value is string {
   }
 }
 
+const URL_SPLIT_RE = /(https?:\/\/[^\s)]+)/g
+const URL_FULL_RE = /^https?:\/\/[^\s)]+$/
+
+// Render message text with bare URLs turned into clickable links, everything
+// else left as plain text — chat replies aren't markdown, just plain strings
+// that happen to contain asset links. `split` with a capturing group returns
+// the matched URLs interleaved at odd indices alongside the surrounding text.
+function linkifyText(text: string, linkClassName: string): React.ReactNode[] {
+  return text.split(URL_SPLIT_RE).map((part, i) => {
+    if (!URL_FULL_RE.test(part)) return part
+    // Trailing punctuation (e.g. a period ending the sentence) shouldn't be part of the link
+    const trailingMatch = part.match(/[).,;:!?]+$/)
+    const trailing = trailingMatch ? trailingMatch[0] : ''
+    const href = trailing ? part.slice(0, -trailing.length) : part
+    return (
+      <span key={i}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={linkClassName}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {href}
+        </a>
+        {trailing}
+      </span>
+    )
+  })
+}
+
 function TypingIndicator({ accentColor }: { accentColor: string }) {
   return (
     <div className="flex items-start gap-2">
@@ -436,7 +467,12 @@ export function TrackChatWidget({
                         : undefined
                     }
                   >
-                    {message.content}
+                    {linkifyText(
+                      message.content,
+                      message.role === 'user'
+                        ? 'underline decoration-white/60 hover:decoration-white'
+                        : 'underline text-slate-900 decoration-slate-400 hover:decoration-slate-900 break-all'
+                    )}
                   </div>
                 </div>
               ))}
