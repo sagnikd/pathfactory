@@ -246,7 +246,12 @@ export default function TrackViewer({
   const [shareUrl, setShareUrl] = useState('')
   useEffect(() => { setShareUrl(window.location.href) }, [])
 
-  const downloadHref = currentAsset?.fileUrl || (currentAsset?.type === 'pdf' ? currentAsset?.sourceUrl : null) || null
+  // Matches AssetViewer's own PDF routing — an "article" asset whose sourceUrl
+  // ends in .pdf is rendered (and thus downloadable) as a PDF too, not just
+  // assets explicitly typed "pdf".
+  const isPdfRouted = currentAsset?.type === 'pdf' ||
+    (currentAsset?.type === 'article' && /\.pdf(\?|$)/i.test(currentAsset?.sourceUrl || ''))
+  const downloadHref = currentAsset?.fileUrl || (isPdfRouted ? currentAsset?.sourceUrl : null) || null
 
   const handleCtaClick = () => {
     if (!brandCta) return
