@@ -46,6 +46,7 @@ type TrackData = {
       meetingUrl?: string
       meetingCtaLabel?: string
       meetingCtaThreshold?: number
+      systemPrompt?: string
     }
     brand?: {
       logoUrl?: string
@@ -108,6 +109,7 @@ export function TrackBuilder({
   const [chatMeetingUrl, setChatMeetingUrl] = useState(existingChat?.meetingUrl ?? '')
   const [chatMeetingLabel, setChatMeetingLabel] = useState(existingChat?.meetingCtaLabel ?? 'Book a meeting')
   const [chatThreshold, setChatThreshold] = useState<number>(existingChat?.meetingCtaThreshold ?? 3)
+  const [chatSystemPrompt, setChatSystemPrompt] = useState(existingChat?.systemPrompt ?? '')
 
   // ── Branding & CTA config ────────────────────────────────────────────────
   const existingBrand = initialTrack?.themeJson?.brand
@@ -260,6 +262,7 @@ export function TrackBuilder({
         meetingUrl: trimmedMeetingUrl.startsWith('https://') ? trimmedMeetingUrl : undefined,
         meetingCtaLabel: chatMeetingLabel.trim() || 'Book a meeting',
         meetingCtaThreshold: chatThreshold,
+        systemPrompt: chatSystemPrompt.trim() || undefined,
       },
       brand: {
         logoUrl: logoUrl.trim() || null,
@@ -724,7 +727,7 @@ export function TrackBuilder({
               <p className="text-sm font-semibold">Chat Assistant</p>
               <p className="text-xs text-muted-foreground">
                 {chatEnabled
-                  ? `${chatName || 'AI Assistant'}${chatMeetingUrl.trim() ? ` · meeting CTA after ${chatThreshold} Qs` : ''}`
+                  ? `${chatName || 'AI Assistant'}${chatSystemPrompt.trim() ? ' · custom prompt' : ''}${chatMeetingUrl.trim() ? ` · meeting CTA after ${chatThreshold} Qs` : ''}`
                   : 'Disabled'}
               </p>
             </div>
@@ -761,6 +764,21 @@ export function TrackBuilder({
                     value={chatName}
                     onChange={(e) => setChatName(e.target.value)}
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="chat-system-prompt">System prompt <span className="text-muted-foreground font-normal">(optional — overrides the assistant's default persona and conversation flow)</span></Label>
+                  <textarea
+                    id="chat-system-prompt"
+                    placeholder="You are a smart, consultative assistant on a B2B marketing platform website..."
+                    value={chatSystemPrompt}
+                    onChange={(e) => setChatSystemPrompt(e.target.value)}
+                    rows={8}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The assistant still only recommends real assets from this track and never invents titles, links, or stats. It automatically opens on its own once a visitor shows real engagement (3+ assets viewed, 90+ seconds on one asset, or 50%+ scroll on a document).
+                  </p>
                 </div>
 
                 <div className="space-y-1.5">

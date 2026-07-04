@@ -10,6 +10,7 @@ export type TrackChatConfig = {
   meetingCtaLabel: string
   meetingCtaThreshold: number
   suggestedQuestions: string[]
+  systemPrompt: string | undefined
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -65,5 +66,10 @@ export function getTrackChatConfig(themeJson: unknown): TrackChatConfig {
     .map(q => q.trim().slice(0, 80))
     .slice(0, 4)
 
-  return { enabled, accentColor, assistantName, meetingUrl, meetingCtaLabel, meetingCtaThreshold, suggestedQuestions }
+  const systemPrompt =
+    typeof chat.systemPrompt === 'string' && chat.systemPrompt.trim()
+      ? chat.systemPrompt.trim().slice(0, 6000)
+      : undefined
+
+  return { enabled, accentColor, assistantName, meetingUrl, meetingCtaLabel, meetingCtaThreshold, suggestedQuestions, systemPrompt }
 }

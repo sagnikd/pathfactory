@@ -71,7 +71,7 @@ function formatTime(secs: number): string {
 
 // ─── Root viewer ─────────────────────────────────────────────────────────────
 
-export function AssetViewer({ asset, sessionId, onSummarize, gateCleared = true, showInlineDownload = true }: any) {
+export function AssetViewer({ asset, sessionId, onSummarize, gateCleared = true, showInlineDownload = true, onScrollProgress }: any) {
   // ── Dwell-time tracking ──────────────────────────────────────────────────
   // Emit a `dwell_tick` every 10 s only while ALL of:
   //   1. Tab is visible (visibilitychange)
@@ -170,8 +170,8 @@ export function AssetViewer({ asset, sessionId, onSummarize, gateCleared = true,
   return (
     <div className="relative w-full h-full">
       {(asset.type === 'video' || treatAsCloudinaryVideo) && <VideoViewer asset={asset} sessionId={sessionId} onSummarize={onSummarize} />}
-      {asset.type === 'pdf'     && <PdfViewer     asset={asset} sessionId={sessionId} gateCleared={gateCleared} onSummarize={onSummarize} showInlineDownload={showInlineDownload} />}
-      {asset.type === 'article' && /\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <PdfViewer asset={asset} sessionId={sessionId} gateCleared={gateCleared} onSummarize={onSummarize} showInlineDownload={showInlineDownload} />}
+      {asset.type === 'pdf'     && <PdfViewer     asset={asset} sessionId={sessionId} gateCleared={gateCleared} onSummarize={onSummarize} showInlineDownload={showInlineDownload} onScrollProgress={onScrollProgress} />}
+      {asset.type === 'article' && /\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <PdfViewer asset={asset} sessionId={sessionId} gateCleared={gateCleared} onSummarize={onSummarize} showInlineDownload={showInlineDownload} onScrollProgress={onScrollProgress} />}
       {asset.type === 'article' && !treatAsCloudinaryVideo && !/\.pdf(\?|$)/i.test(asset.sourceUrl || '') && <ArticleViewer asset={asset} sessionId={sessionId} onSummarize={onSummarize} />}
       {asset.type === 'image'   && <ImageViewer   asset={asset}                       onSummarize={onSummarize} />}
     </div>
@@ -419,7 +419,7 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
 
 // ─── PDF viewer ──────────────────────────────────────────────────────────────
 
-function PdfViewer({ asset, sessionId, onSummarize, gateCleared = true, showInlineDownload = true }: any) {
+function PdfViewer({ asset, sessionId, onSummarize, gateCleared = true, showInlineDownload = true, onScrollProgress }: any) {
   const [numPages, setNumPages] = useState<number>(0)
   const [scrollPct, setScrollPct] = useState(0)
   const [resumed, setResumed] = useState(false)
@@ -456,14 +456,16 @@ function PdfViewer({ asset, sessionId, onSummarize, gateCleared = true, showInli
     const pct = el.scrollHeight <= el.clientHeight
       ? 100
       : (el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100
-    setScrollPct(Math.round(pct))
+    const rounded = Math.round(pct)
+    setScrollPct(rounded)
+    onScrollProgress?.(rounded)
 
     // Debounced save
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       localStorage.setItem(storageKey, String(el.scrollTop))
     }, 400)
-  }, [storageKey])
+  }, [storageKey, onScrollProgress])
 
   return (
     <div className="w-full h-full flex flex-col bg-muted/30">

@@ -11,6 +11,10 @@ import {
   type TrackContext,
 } from '@/lib/trackChatServer'
 import { getTrackChatConfig } from '@/lib/trackChatConfig'
+import { computeLeadScores } from '@/lib/leadScore'
+import { processAbmLeadMatch } from '@/lib/abm'
+
+type ChatTurn = { role: 'user' | 'assistant'; content: string }
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -207,8 +211,9 @@ function parseAssistantPayload(
     const parsed = JSON.parse(rawText) as unknown
     if (!isRecord(parsed)) throw new Error('not an object')
 
+    // Collapse spaces/tabs only — keep newlines so bullet-point formatting survives.
     const answer = typeof parsed.answer === 'string'
-      ? parsed.answer.replace(/\s+/g, ' ').trim().slice(0, 1400)
+      ? parsed.answer.replace(/[ \t]+/g, ' ').trim().slice(0, 1400)
       : ''
     if (!answer) throw new Error('missing answer')
 
@@ -225,7 +230,17 @@ function parseAssistantPayload(
       suggestedQuestions: rawSuggested.length > 0 ? rawSuggested : fallbackQuestions,
     }
   } catch {
-    const plain = rawText.replace(/\s+/g, ' ').trim().slice(0, 1400)
+    // Model sometimes wraps JSON in a markdown code fence despite instructions —
+    // strip the fence and retry once before falling back to plain text.
+    const fenced = rawText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+    if (fenced) {
+      try {
+        return parseAssistantPayload(fenced[1], context, currentAssetId, askedQuestions)
+      } catch {
+        // fall through to plain-text handling below
+      }
+    }
+    const plain = rawText.replace(/[ \t]+/g, ' ').trim().slice(0, 1400)
     return {
       answer: plain || 'I can help with this track — please ask a more specific question.',
       suggestedQuestions: fallbackQuestions,
@@ -237,7 +252,9 @@ async function callOpenAI(
   context: TrackContext,
   message: string,
   currentAssetId: string | null,
-  askedQuestions: string[]
+  askedQuestions: string[],
+  history: ChatTurn[],
+  customSystemPrompt: string | undefined
 ): Promise<AssistantPayload> {
   const apiKey = process.env.OPENAI_API_KEY?.trim()
   if (!apiKey) {
@@ -252,7 +269,14 @@ async function callOpenAI(
     ? context.assets.find((a) => a.id === currentAssetId)
     : undefined
 
-  const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset)
+  const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset, customSystemPrompt)
+
+  // Multi-turn: the model needs prior turns to track conversation state
+  // (e.g. which qualification step it's on) — a single message has no memory.
+  const input = [
+    ...history.map((turn) => ({ role: turn.role, content: turn.content })),
+    { role: 'user' as const, content: message },
+  ]
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 20_000)
@@ -268,7 +292,7 @@ async function callOpenAI(
       body: JSON.stringify({
         model,
         instructions: systemPrompt,
-        input: message,
+        input,
         max_output_tokens: 700,
         store: false,
       }),
@@ -284,12 +308,13 @@ async function callOpenAI(
     }
 
     const rawText = extractOutputText(await response.json())
+    const parsed = parseAssistantPayload(rawText, context, currentAssetId, askedQuestions)
     // Clean markdown, keep line breaks; cap generously so answers aren't cut mid-thought
-    const answer = tightenAnswer(stripMarkdown(rawText)).slice(0, 1600) ||
+    const answer = tightenAnswer(stripMarkdown(parsed.answer)).slice(0, 1600) ||
       'I can help — please ask a more specific question about this track.'
     return {
       answer,
-      suggestedQuestions: getRecommendedQuestions(context, currentAssetId, askedQuestions),
+      suggestedQuestions: parsed.suggestedQuestions,
     }
   } catch (error) {
     console.error('[track-chat] OpenAI request failed:', error)
@@ -386,6 +411,90 @@ async function persistChatTurn(
 }
 
 // ---------------------------------------------------------------------------
+// Soft lead capture from chat — the visitor gives an email/name conversationally
+// (per the "soft email capture" flow in a custom system prompt) instead of
+// filling a form. Best-effort: never blocks the chat reply on failure.
+// ---------------------------------------------------------------------------
+
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
+const PLAUSIBLE_NAME_RE = /^[a-zA-Z][a-zA-Z' -]{0,39}$/
+
+async function captureEmailFromMessage(
+  trackId: string,
+  sessionId: string,
+  message: string
+): Promise<void> {
+  const match = message.match(EMAIL_RE)
+  if (!match) return
+  const email = match[0].toLowerCase()
+
+  const [row] = await db
+    .select({ visitorId: sessions.visitorId, capturedEmail: visitors.capturedEmail })
+    .from(sessions)
+    .innerJoin(visitors, eq(sessions.visitorId, visitors.id))
+    .where(eq(sessions.id, sessionId))
+    .limit(1)
+  if (!row) return
+  // Already captured for this visitor — avoid inserting a duplicate lead on every mention
+  if (row.capturedEmail?.trim()) return
+
+  await db.update(visitors).set({ capturedEmail: email }).where(eq(visitors.id, row.visitorId))
+
+  const scoreMap = await computeLeadScores([row.visitorId])
+  const score = scoreMap[row.visitorId]?.total ?? 0
+
+  const [lead] = await db.insert(leads).values({
+    visitorId: row.visitorId,
+    email,
+    formResponsesJson: { email, source: 'chat' },
+    score,
+  }).returning({ id: leads.id })
+
+  await processAbmLeadMatch({
+    trackId,
+    visitorId: row.visitorId,
+    leadId: lead.id,
+    email,
+    formFields: { email, source: 'chat' },
+  }).catch(() => {})
+}
+
+async function captureNameFromMessage(
+  sessionId: string,
+  message: string,
+  history: ChatTurn[]
+): Promise<void> {
+  const trimmed = message.trim()
+  if (!PLAUSIBLE_NAME_RE.test(trimmed) || trimmed.split(/\s+/).length > 4) return
+
+  const lastAssistantTurn = [...history].reverse().find((t) => t.role === 'assistant')
+  if (!lastAssistantTurn || !/address you|what.?s your name|how should i call you/i.test(lastAssistantTurn.content)) return
+
+  const [row] = await db
+    .select({ visitorId: sessions.visitorId })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1)
+  if (!row) return
+
+  const [lead] = await db
+    .select({ id: leads.id, formResponsesJson: leads.formResponsesJson })
+    .from(leads)
+    .where(eq(leads.visitorId, row.visitorId))
+    .orderBy(desc(leads.createdAt))
+    .limit(1)
+  if (!lead) return
+
+  const fields = (lead.formResponsesJson as Record<string, unknown> | null) ?? {}
+  if (typeof fields.firstName === 'string' && fields.firstName.trim()) return
+
+  await db
+    .update(leads)
+    .set({ formResponsesJson: { ...fields, firstName: trimmed } })
+    .where(eq(leads.id, lead.id))
+}
+
+// ---------------------------------------------------------------------------
 // Route handler
 // ---------------------------------------------------------------------------
 
@@ -401,14 +510,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'trackId is required' }, { status: 400 })
     }
 
-    const message = typeof body.message === 'string' ? body.message.replace(/\s+/g, ' ').trim().slice(0, 1600) : ''
-    if (!message) {
-      return NextResponse.json({ error: 'message is required' }, { status: 400 })
-    }
-
     const currentAssetId = typeof body.currentAssetId === 'string'
       ? body.currentAssetId.trim().slice(0, 80) || null
       : null
+
+    // Proactive outreach: the assistant opens the conversation on its own once
+    // the visitor's engagement crosses a threshold, rather than waiting for a
+    // question. No real user message exists for this turn — one is synthesized
+    // server-side and never shown to the visitor or persisted as their own.
+    const isKickoff = body.kickoff === true
+    const kickoffAssetTitle = typeof body.kickoffAssetTitle === 'string'
+      ? body.kickoffAssetTitle.trim().slice(0, 200)
+      : ''
+
+    const message = isKickoff
+      ? `(System: the visitor has shown real engagement${kickoffAssetTitle ? ` while viewing "${kickoffAssetTitle}"` : ''}. Begin the conversation now, per your instructions for this moment — a contextual hook, not a generic greeting.)`
+      : typeof body.message === 'string' ? body.message.replace(/\s+/g, ' ').trim().slice(0, 1600) : ''
+
+    if (!message) {
+      return NextResponse.json({ error: 'message is required' }, { status: 400 })
+    }
 
     const sessionId = typeof body.sessionId === 'string'
       ? body.sessionId.trim().slice(0, 80) || null
@@ -420,6 +541,16 @@ export async function POST(req: Request) {
           .map((q) => q.trim())
           .filter(Boolean)
           .slice(0, 20)
+      : []
+
+    const history: ChatTurn[] = Array.isArray(body.history)
+      ? (body.history as unknown[])
+          .filter(isRecord)
+          .filter((t): t is { role: 'user' | 'assistant'; content: string } =>
+            (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string'
+          )
+          .map((t) => ({ role: t.role, content: t.content.slice(0, 1600) }))
+          .slice(-20)
       : []
 
     const rateLimitKey = await getRateLimitKey(trackId)
@@ -454,12 +585,24 @@ export async function POST(req: Request) {
       ? currentAssetId
       : null
 
-    const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions)
+    const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt)
 
-    // Persist the turn to the chat inbox (best-effort — never block the reply)
-    void persistChatTurn(trackId, sessionId, message, assistant.answer).catch((err) =>
-      console.error('[track-chat] persist failed:', err)
-    )
+    if (!isKickoff) {
+      // Persist the turn to the chat inbox (best-effort — never block the reply)
+      void persistChatTurn(trackId, sessionId, message, assistant.answer).catch((err) =>
+        console.error('[track-chat] persist failed:', err)
+      )
+
+      // Soft lead capture — visitor volunteered an email or name conversationally
+      if (sessionId) {
+        void captureEmailFromMessage(trackId, sessionId, message).catch((err) =>
+          console.error('[track-chat] email capture failed:', err)
+        )
+        void captureNameFromMessage(sessionId, message, history).catch((err) =>
+          console.error('[track-chat] name capture failed:', err)
+        )
+      }
+    }
 
     const showMeetingCta = Boolean(
       chatConfig.meetingUrl &&

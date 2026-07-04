@@ -23,6 +23,8 @@ interface TrackChatWidgetProps {
   summarizeToken?: number
   ctaChatToken?: number
   ctaChatMessage?: string
+  proactiveToken?: number
+  proactiveAssetTitle?: string
 }
 
 type ChatMessage = {
@@ -96,6 +98,8 @@ export function TrackChatWidget({
   summarizeToken,
   ctaChatToken,
   ctaChatMessage,
+  proactiveToken,
+  proactiveAssetTitle,
 }: TrackChatWidgetProps) {
   const firstName = visitorName?.trim().split(/\s+/)[0] || null
   const greeting: ChatMessage | null = firstName
@@ -120,6 +124,7 @@ export function TrackChatWidget({
   const prevAssetIdRef = useRef(currentAssetId)
   const prevSummarizeTokenRef = useRef(summarizeToken)
   const prevCtaChatTokenRef = useRef(ctaChatToken)
+  const prevProactiveTokenRef = useRef(proactiveToken)
 
   const {
     accentColor,
@@ -189,12 +194,30 @@ export function TrackChatWidget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctaChatToken])
 
+  // Visitor crossed an engagement threshold (3+ assets viewed, 90+s dwell on
+  // one asset, or 50%+ scroll on a document) — pop the panel open and let the
+  // assistant hook them with something contextual, per its instructions.
+  useEffect(() => {
+    if (proactiveToken === undefined || prevProactiveTokenRef.current === proactiveToken) return
+    prevProactiveTokenRef.current = proactiveToken
+    setIsOpen(true)
+    sendKickoff()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proactiveToken])
+
   if (!chatConfig.enabled) return null
+
+  // The greeting is a canned UI message, not something the model produced —
+  // exclude it from the history sent back, so the model isn't confused by a
+  // "turn" it never actually generated.
+  const conversationHistory = (msgs: ChatMessage[]) =>
+    msgs.filter((m) => m !== greeting).map((m) => ({ role: m.role, content: m.content }))
 
   async function sendQuestion(question?: string) {
     const text = (question ?? inputValue).trim()
     if (!text || isLoading) return
 
+    const priorHistory = conversationHistory(messages)
     const userMessage: ChatMessage = { role: 'user', content: text }
     const nextMessages = [...messages, userMessage]
     setMessages(nextMessages)
@@ -213,6 +236,7 @@ export function TrackChatWidget({
           sessionId: sessionId ?? null,
           currentAssetId: currentAssetId ?? null,
           message: text,
+          history: priorHistory,
           askedQuestions: nextAskedQuestions,
         }),
       })
@@ -251,6 +275,43 @@ export function TrackChatWidget({
             'I could not reach the assistant right now. Try one of the suggested questions or keep browsing the track.',
         },
       ])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Proactive outreach — the assistant opens the conversation itself once the
+  // visitor's engagement crosses a threshold. No visible user message for this
+  // turn; only the assistant's contextual hook gets appended.
+  async function sendKickoff() {
+    if (isLoading) return
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/track-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trackId,
+          sessionId: sessionId ?? null,
+          currentAssetId: currentAssetId ?? null,
+          kickoff: true,
+          kickoffAssetTitle: proactiveAssetTitle ?? '',
+          history: conversationHistory(messages),
+          askedQuestions,
+        }),
+      })
+      const data = await response.json().catch(() => ({})) as ChatApiResponse
+      if (!response.ok) throw new Error(data.error ?? 'Chat request failed')
+
+      const answer = data.answer?.trim()
+      if (answer) setMessages((prev) => [...prev, { role: 'assistant', content: answer }])
+      if (data.suggestedQuestions?.length) {
+        setSuggestedQuestions(data.suggestedQuestions.map((q) => q.trim()).filter(Boolean).slice(0, 5))
+      }
+      if (data.showMeetingCta) setShowMeetingCta(true)
+    } catch {
+      // Best-effort — if the proactive hook fails, just stay silent rather than
+      // show an error for a conversation the visitor never asked to start.
     } finally {
       setIsLoading(false)
     }

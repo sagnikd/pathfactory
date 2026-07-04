@@ -356,10 +356,20 @@ function assetLine(asset: Asset, index: number, pdfText?: string): string {
   return parts.join('\n')
 }
 
+const JSON_OUTPUT_INSTRUCTIONS = [
+  '',
+  'OUTPUT FORMAT — always respond with a single JSON object and nothing else:',
+  '{"answer": "your reply text shown to the visitor", "suggestedQuestions": ["short clickable option 1", "short clickable option 2", ...]}',
+  '- "answer" is required plain text (no markdown).',
+  '- "suggestedQuestions" is optional. Use it for clickable follow-up questions, OR for a short list of selectable options you just offered the visitor (e.g. industries, roles). Omit or use an empty array when there is nothing to offer.',
+  '- Never wrap the JSON in code fences. Output ONLY the JSON object.',
+]
+
 export async function buildSystemPrompt(
   track: Track,
   trackAssets: Asset[],
-  currentAsset?: Asset
+  currentAsset?: Asset,
+  customSystemPrompt?: string
 ): Promise<string> {
   // Only extract the CURRENT asset's content — other track assets contribute
   // title/type/metadata only. This prevents content from unrelated assets (e.g.
@@ -404,6 +414,29 @@ export async function buildSystemPrompt(
     ? `That's outside what this track covers. This track is about "${track.title}" — ask me about ${trackAssets.slice(0, 2).map((a) => `"${a.title}"`).join(' or ')}.`
     : `That's outside what this track covers. Ask me about "${track.title}".`
 
+  // Custom persona/behavior configured in the dashboard — takes priority over
+  // the default Q&A persona below, but still gets the real asset data and the
+  // same anti-hallucination guardrails so it can only ever recommend real
+  // assets with real links, never invented ones.
+  if (customSystemPrompt) {
+    return [
+      customSystemPrompt,
+      '',
+      `You are operating on the content track titled "${track.title}".`,
+      '',
+      'ASSETS AVAILABLE IN THIS TRACK (the only content you may reference or recommend):',
+      assetSection,
+      currentSection,
+      'GUARDRAILS — follow exactly, no exceptions:',
+      '- Only recommend assets listed above, using their exact title and URL. Never invent asset titles, links, statistics, or descriptions.',
+      '- Never fabricate outcome stats, customer names, or claims not present in the asset data above.',
+      '- Stay on the topic of this track and its assets; redirect anything unrelated back to the track.',
+      ...JSON_OUTPUT_INSTRUCTIONS,
+    ]
+      .join('\n')
+      .slice(0, 28000)
+  }
+
   return [
     `You are a content-guide assistant for ONE specific content track titled "${track.title}".`,
     'You are NOT a general-purpose assistant. You ONLY discuss this track and its assets.',
@@ -424,6 +457,7 @@ export async function buildSystemPrompt(
     'EXAMPLES of questions you CAN answer (name is in the content): "who is the speaker", "who presents this video", "who wrote this".',
     'EXAMPLES of off-topic questions you MUST redirect (do NOT answer them): "what is the weather", "560062 pin code", "who won the world cup", "write me code", "what is 2+2", "tell me about Microsoft".',
     `For the off-topic ones, your entire reply is: "${redirectLine}"`,
+    ...JSON_OUTPUT_INSTRUCTIONS,
   ]
     .join('\n')
     .slice(0, 28000)

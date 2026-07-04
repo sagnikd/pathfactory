@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { initializeTracking, trackEvent } from '@/lib/tracking'
 import { Progress } from '@/components/ui/progress'
 import dynamic from 'next/dynamic'
@@ -8,7 +8,7 @@ import { GateOverlay, type GateConfig } from '@/components/GateOverlay'
 import { clientGeoLookup } from '@/lib/geoLookup'
 import { TrackChatWidget } from '@/components/TrackChatWidget'
 import { getTrackChatConfig } from '@/lib/trackChatConfig'
-import { Download, Megaphone } from 'lucide-react'
+import { Download, Megaphone, ChevronLeft, ChevronRight } from 'lucide-react'
 
 function LinkedInIcon(props: { className?: string }) {
   return (
@@ -91,6 +91,45 @@ export default function TrackViewer({
   // watches this to pop open and post its canned opening message.
   const [ctaChatToken, setCtaChatToken] = useState(0)
   const handleCtaChat = () => setCtaChatToken((t) => t + 1)
+
+  // ── Proactive engagement trigger (only when a custom system prompt is
+  // configured) — pops the chat open on its own once the visitor has viewed
+  // 3+ assets, spent 90+s on one asset, or scrolled 50%+ of a document.
+  // Fires at most once per page load.
+  const [proactiveToken, setProactiveToken] = useState(0)
+  const proactiveFiredRef = useRef(false)
+  const viewedAssetIdsRef = useRef<Set<string>>(new Set())
+  const dwellSecondsRef = useRef(0)
+
+  const handleProactiveTrigger = () => {
+    if (proactiveFiredRef.current) return
+    proactiveFiredRef.current = true
+    setProactiveToken((t) => t + 1)
+  }
+
+  const handleScrollProgress = (pct: number) => {
+    if (pct >= 50) handleProactiveTrigger()
+  }
+
+  useEffect(() => {
+    if (!chatConfig.systemPrompt || !currentAsset) return
+    viewedAssetIdsRef.current.add(currentAsset.id)
+    dwellSecondsRef.current = 0
+    if (viewedAssetIdsRef.current.size >= 3) handleProactiveTrigger()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAsset?.id, chatConfig.systemPrompt])
+
+  useEffect(() => {
+    if (!chatConfig.systemPrompt) return
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) {
+        dwellSecondsRef.current += 1
+        if (dwellSecondsRef.current >= 90) handleProactiveTrigger()
+      }
+    }, 1000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAsset?.id, chatConfig.systemPrompt])
 
   const brand = (track.themeJson as {
     brand?: {
@@ -200,6 +239,10 @@ export default function TrackViewer({
     if (currentAssetIndex > 0) setCurrentAssetIndex(prev => prev - 1)
   }
 
+  const prevAsset = currentAssetIndex > 0 ? assets[currentAssetIndex - 1] : null
+  const nextAsset = currentAssetIndex < assets.length - 1 ? assets[currentAssetIndex + 1] : null
+  const assetThumb = (asset: typeof currentAsset) => asset?.thumbnailUrl || asset?.fileUrl || asset?.sourceUrl || null
+
   if (!currentAsset) {
     return <div className="p-8 text-center">No assets in this track.</div>
   }
@@ -248,12 +291,12 @@ export default function TrackViewer({
         <main className="flex-1 overflow-hidden bg-muted/20 flex flex-col lg:flex-row">
           <aside className="w-full lg:w-80 lg:border-r bg-background overflow-y-auto p-2 sm:p-3 space-y-2 max-h-56 lg:max-h-none border-b lg:border-b-0">
             {(brand?.logoUrl || brandCta) && (
-              <div className="space-y-3 pb-3 mb-1 border-b">
+              <div className="flex flex-col items-center text-center space-y-4 pb-4 mb-1 border-b">
                 {brand?.logoUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={brand.logoUrl} alt={org.name} className="max-h-10 max-w-[160px] object-contain" />
+                  <img src={brand.logoUrl} alt={org.name} className="max-h-20 max-w-[220px] w-full object-contain" />
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-center gap-2">
                   <a
                     href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
                     target="_blank"
@@ -367,6 +410,7 @@ export default function TrackViewer({
                 gateCleared={gateCleared}
                 onSummarize={chatConfig.enabled ? handleSummarize : undefined}
                 showInlineDownload={false}
+                onScrollProgress={handleScrollProgress}
               />
             </GateOverlay>
           </div>
@@ -387,29 +431,58 @@ export default function TrackViewer({
               sessionId={sessionId}
               gateCleared={gateCleared}
               onSummarize={chatConfig.enabled ? handleSummarize : undefined}
+              onScrollProgress={handleScrollProgress}
             />
           </GateOverlay>
-        </main>
-      )}
 
-      {/* Navigation */}
-      {layout === 'binge' && (
-        <div className="grid grid-cols-2 gap-2 p-2 sm:p-3 border-t shrink-0 bg-background">
-          <button
-            onClick={handlePrevious}
-            disabled={currentAssetIndex === 0}
-            className="w-full px-3 py-2.5 text-sm font-medium bg-primary/85 text-primary-foreground rounded-md hover:bg-primary disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <button
-            onClick={handleNext}
-            disabled={currentAssetIndex === assets.length - 1}
-            className="w-full px-3 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-md disabled:opacity-50"
-          >
-            Next Asset
-          </button>
-        </div>
+          {layout === 'binge' && prevAsset && (
+            <div className="group absolute left-3 top-1/2 -translate-y-1/2 z-20">
+              <button
+                onClick={handlePrevious}
+                aria-label="Previous asset"
+                className="w-11 h-11 rounded-full bg-background/85 backdrop-blur border shadow-md flex items-center justify-center text-foreground hover:bg-background transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 w-72 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-150 rounded-xl border bg-background/95 backdrop-blur shadow-xl overflow-hidden">
+                <div className="w-full h-36 bg-muted shrink-0">
+                  {assetThumb(prevAsset) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={assetThumb(prevAsset)!} alt="" className="w-full h-full object-cover object-left-top" />
+                  ) : null}
+                </div>
+                <div className="p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Previous</p>
+                  <p className="text-sm font-semibold line-clamp-2 mt-0.5">{prevAsset.displayTitle ?? prevAsset.title}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {layout === 'binge' && nextAsset && (
+            <div className="group absolute right-3 top-1/2 -translate-y-1/2 z-20">
+              <button
+                onClick={handleNext}
+                aria-label="Next asset"
+                className="w-11 h-11 rounded-full bg-background/85 backdrop-blur border shadow-md flex items-center justify-center text-foreground hover:bg-background transition-colors"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+              <div className="absolute right-full top-1/2 -translate-y-1/2 mr-3 w-72 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-150 rounded-xl border bg-background/95 backdrop-blur shadow-xl overflow-hidden">
+                <div className="w-full h-36 bg-muted shrink-0">
+                  {assetThumb(nextAsset) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={assetThumb(nextAsset)!} alt="" className="w-full h-full object-cover object-left-top" />
+                  ) : null}
+                </div>
+                <div className="p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Next</p>
+                  <p className="text-sm font-semibold line-clamp-2 mt-0.5">{nextAsset.displayTitle ?? nextAsset.title}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
       )}
       <TrackChatWidget
         trackId={track.id}
@@ -420,6 +493,8 @@ export default function TrackViewer({
         summarizeToken={summarizeToken}
         ctaChatToken={ctaChatToken}
         ctaChatMessage={brand?.cta?.chatMessage}
+        proactiveToken={proactiveToken}
+        proactiveAssetTitle={currentAsset?.displayTitle ?? currentAsset?.title}
       />
     </div>
   )
