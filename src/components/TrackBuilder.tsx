@@ -14,6 +14,7 @@ import {
 import {
   FileText, Video, Link2, Image as ImageIcon,
   Plus, Loader2, GripVertical, X, Mail, ChevronRight, MessageSquare, Pencil,
+  ImagePlus, Megaphone,
 } from 'lucide-react'
 import { createTrack, updateTrack } from '@/app/dashboard/tracks/actions'
 import type { LeadField, GateConfig } from '@/components/GateOverlay'
@@ -45,6 +46,16 @@ type TrackData = {
       meetingUrl?: string
       meetingCtaLabel?: string
       meetingCtaThreshold?: number
+    }
+    brand?: {
+      logoUrl?: string
+      cta?: {
+        enabled?: boolean
+        label?: string
+        action?: 'link' | 'chat'
+        url?: string
+        chatMessage?: string
+      }
     }
   } & Record<string, unknown>) | null
 }
@@ -97,6 +108,24 @@ export function TrackBuilder({
   const [chatMeetingUrl, setChatMeetingUrl] = useState(existingChat?.meetingUrl ?? '')
   const [chatMeetingLabel, setChatMeetingLabel] = useState(existingChat?.meetingCtaLabel ?? 'Book a meeting')
   const [chatThreshold, setChatThreshold] = useState<number>(existingChat?.meetingCtaThreshold ?? 3)
+
+  // ── Branding & CTA config ────────────────────────────────────────────────
+  const existingBrand = initialTrack?.themeJson?.brand
+  const [brandOpen, setBrandOpen] = useState(false)
+  const [logoUrl, setLogoUrl] = useState(existingBrand?.logoUrl ?? '')
+  const [ctaEnabled, setCtaEnabled] = useState<boolean>(existingBrand?.cta?.enabled ?? false)
+  const [ctaLabel, setCtaLabel] = useState(existingBrand?.cta?.label ?? "Let's talk")
+  const [ctaAction, setCtaAction] = useState<'link' | 'chat'>(existingBrand?.cta?.action ?? 'link')
+  const [ctaUrl, setCtaUrl] = useState(existingBrand?.cta?.url ?? '')
+  const [ctaChatMessage, setCtaChatMessage] = useState(
+    existingBrand?.cta?.chatMessage ?? 'Sure, let me set up a meeting with our sales team.'
+  )
+
+  function handleLogoFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = () => setLogoUrl(String(reader.result ?? ''))
+    reader.readAsDataURL(file)
+  }
 
   // ── Lead capture config ──────────────────────────────────────────────────
   const existingGate = initialTrack?.gateConfigJson
@@ -231,6 +260,16 @@ export function TrackBuilder({
         meetingUrl: trimmedMeetingUrl.startsWith('https://') ? trimmedMeetingUrl : undefined,
         meetingCtaLabel: chatMeetingLabel.trim() || 'Book a meeting',
         meetingCtaThreshold: chatThreshold,
+      },
+      brand: {
+        logoUrl: logoUrl.trim() || null,
+        cta: {
+          enabled: ctaEnabled,
+          label: ctaLabel.trim() || "Let's talk",
+          action: ctaAction,
+          url: ctaAction === 'link' ? ctaUrl.trim() || undefined : undefined,
+          chatMessage: ctaAction === 'chat' ? (ctaChatMessage.trim() || 'Sure, let me set up a meeting with our sales team.') : undefined,
+        },
       },
     }
     const assetEntries = selectedIds.map((id) => ({
@@ -764,6 +803,136 @@ export function TrackBuilder({
                       </div>
                     </div>
                   </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Branding & CTA Config ───────────────────────────────────────── */}
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setBrandOpen(o => !o)}
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/40 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${logoUrl || ctaEnabled ? 'bg-primary/10' : 'bg-muted'}`}>
+              <Megaphone className={`w-4 h-4 ${logoUrl || ctaEnabled ? 'text-primary' : 'text-muted-foreground'}`} />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-semibold">Branding &amp; CTA</p>
+              <p className="text-xs text-muted-foreground">
+                {logoUrl ? 'Logo set' : 'No logo'}{ctaEnabled ? ` · CTA "${ctaLabel || "Let's talk"}"` : ''}
+              </p>
+            </div>
+          </div>
+          <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${brandOpen ? 'rotate-90' : ''}`} />
+        </button>
+
+        {brandOpen && (
+          <div className="border-t px-5 pb-6 pt-5 space-y-5">
+            <div className="space-y-1.5">
+              <Label>Logo (hub layout sidebar)</Label>
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 rounded-lg border bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                  {logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logoUrl} alt="Logo preview" className="max-w-full max-h-full object-contain" />
+                  ) : (
+                    <ImagePlus className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium cursor-pointer hover:bg-muted transition-colors">
+                    <ImagePlus className="w-3.5 h-3.5" />
+                    Upload logo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f) }}
+                    />
+                  </label>
+                  {logoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setLogoUrl('')}
+                      className="ml-2 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Enable toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Enable CTA button</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Show a call-to-action button below the logo</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={ctaEnabled}
+                onClick={() => setCtaEnabled(v => !v)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${ctaEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${ctaEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {ctaEnabled && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cta-label">Button label</Label>
+                  <Input
+                    id="cta-label"
+                    placeholder="Let's talk"
+                    value={ctaLabel}
+                    onChange={(e) => setCtaLabel(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Action</Label>
+                  <Select value={ctaAction} onValueChange={(v) => setCtaAction(v as typeof ctaAction)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="link">Open a link</SelectItem>
+                      <SelectItem value="chat">Open chat assistant</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {ctaAction === 'link' ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cta-url">Destination URL</Label>
+                    <Input
+                      id="cta-url"
+                      placeholder="https://..."
+                      value={ctaUrl}
+                      onChange={(e) => setCtaUrl(e.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cta-chat-message">Assistant&apos;s opening message</Label>
+                    <Input
+                      id="cta-chat-message"
+                      placeholder="Sure, let me set up a meeting with our sales team."
+                      value={ctaChatMessage}
+                      onChange={(e) => setCtaChatMessage(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Opens the chat widget and shows this message immediately, plus the meeting-booking button if a meeting URL is configured above.
+                    </p>
+                  </div>
                 )}
               </>
             )}

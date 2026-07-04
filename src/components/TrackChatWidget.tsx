@@ -21,6 +21,8 @@ interface TrackChatWidgetProps {
   sessionId?: string | null
   visitorName?: string | null
   summarizeToken?: number
+  ctaChatToken?: number
+  ctaChatMessage?: string
 }
 
 type ChatMessage = {
@@ -92,6 +94,8 @@ export function TrackChatWidget({
   sessionId,
   visitorName,
   summarizeToken,
+  ctaChatToken,
+  ctaChatMessage,
 }: TrackChatWidgetProps) {
   const firstName = visitorName?.trim().split(/\s+/)[0] || null
   const greeting: ChatMessage | null = firstName
@@ -115,6 +119,7 @@ export function TrackChatWidget({
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevAssetIdRef = useRef(currentAssetId)
   const prevSummarizeTokenRef = useRef(summarizeToken)
+  const prevCtaChatTokenRef = useRef(ctaChatToken)
 
   const {
     accentColor,
@@ -168,6 +173,21 @@ export function TrackChatWidget({
     sendQuestion('Summarize this asset for me.')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summarizeToken])
+
+  // Visitor clicked the sidebar CTA (configured to open chat) — pop the panel
+  // open and post the canned opening line directly, without a round-trip to
+  // the AI. Also surfaces the meeting-booking button right away.
+  useEffect(() => {
+    if (ctaChatToken === undefined || prevCtaChatTokenRef.current === ctaChatToken) return
+    prevCtaChatTokenRef.current = ctaChatToken
+    setIsOpen(true)
+    setMessages((prev) => [
+      ...prev,
+      { role: 'assistant', content: ctaChatMessage?.trim() || 'Sure, let me set up a meeting with our sales team.' },
+    ])
+    setShowMeetingCta(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctaChatToken])
 
   if (!chatConfig.enabled) return null
 

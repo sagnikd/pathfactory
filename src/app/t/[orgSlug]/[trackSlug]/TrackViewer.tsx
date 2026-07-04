@@ -8,6 +8,23 @@ import { GateOverlay, type GateConfig } from '@/components/GateOverlay'
 import { clientGeoLookup } from '@/lib/geoLookup'
 import { TrackChatWidget } from '@/components/TrackChatWidget'
 import { getTrackChatConfig } from '@/lib/trackChatConfig'
+import { Download, Megaphone } from 'lucide-react'
+
+function LinkedInIcon(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={props.className} aria-hidden="true">
+      <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.03-1.85-3.03-1.86 0-2.15 1.45-2.15 2.94v5.66H9.35V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.59 0 4.25 2.37 4.25 5.44v6.3zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45z" />
+    </svg>
+  )
+}
+
+function FacebookIcon(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={props.className} aria-hidden="true">
+      <path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.87h2.78l-.44 2.91h-2.34V22c4.78-.79 8.44-4.94 8.44-9.94z" />
+    </svg>
+  )
+}
 
 const AssetViewer = dynamic(() => import('./AssetViewer').then(m => m.AssetViewer), { ssr: false })
 
@@ -69,6 +86,19 @@ export default function TrackViewer({
   // TrackChatWidget watches this to pop open and ask for a summary.
   const [summarizeToken, setSummarizeToken] = useState(0)
   const handleSummarize = () => setSummarizeToken((t) => t + 1)
+
+  // Incremented when the sidebar CTA is set to "open chat" — TrackChatWidget
+  // watches this to pop open and post its canned opening message.
+  const [ctaChatToken, setCtaChatToken] = useState(0)
+  const handleCtaChat = () => setCtaChatToken((t) => t + 1)
+
+  const brand = (track.themeJson as {
+    brand?: {
+      logoUrl?: string
+      cta?: { enabled?: boolean; label?: string; action?: 'link' | 'chat'; url?: string; chatMessage?: string }
+    }
+  } | null)?.brand ?? null
+  const brandCta = brand?.cta?.enabled ? brand.cta : null
 
   useEffect(() => {
     initializeTracking().then(() => setTrackingInitialized(true))
@@ -150,6 +180,18 @@ export default function TrackViewer({
 
   const progress = ((effectiveIndex + 1) / assets.length) * 100
 
+  // Computed post-mount to avoid an SSR/CSR hydration mismatch (server has no window).
+  const [shareUrl, setShareUrl] = useState('')
+  useEffect(() => { setShareUrl(window.location.href) }, [])
+
+  const downloadHref = currentAsset?.fileUrl || (currentAsset?.type === 'pdf' ? currentAsset?.sourceUrl : null) || null
+
+  const handleCtaClick = () => {
+    if (!brandCta) return
+    if (brandCta.action === 'chat') handleCtaChat()
+    else if (brandCta.url) window.open(brandCta.url, '_blank', 'noopener,noreferrer')
+  }
+
   const handleNext = () => {
     if (currentAssetIndex < assets.length - 1) setCurrentAssetIndex(prev => prev + 1)
   }
@@ -205,6 +247,55 @@ export default function TrackViewer({
       {layout === 'hub' ? (
         <main className="flex-1 overflow-hidden bg-muted/20 flex flex-col lg:flex-row">
           <aside className="w-full lg:w-80 lg:border-r bg-background overflow-y-auto p-2 sm:p-3 space-y-2 max-h-56 lg:max-h-none border-b lg:border-b-0">
+            {(brand?.logoUrl || brandCta) && (
+              <div className="space-y-3 pb-3 mb-1 border-b">
+                {brand?.logoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={brand.logoUrl} alt={org.name} className="max-h-10 max-w-[160px] object-contain" />
+                )}
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Share on LinkedIn"
+                    className="w-8 h-8 rounded-md border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                  >
+                    <LinkedInIcon className="w-4 h-4" />
+                  </a>
+                  <a
+                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Share on Facebook"
+                    className="w-8 h-8 rounded-md border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                  >
+                    <FacebookIcon className="w-4 h-4" />
+                  </a>
+                  {gateCleared && downloadHref && (
+                    <a
+                      href={downloadHref}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Download current asset"
+                      className="w-8 h-8 rounded-md border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                  )}
+                </div>
+                {brandCta && (
+                  <button
+                    onClick={handleCtaClick}
+                    className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    <Megaphone className="w-4 h-4" />
+                    {brandCta.label || "Let's talk"}
+                  </button>
+                )}
+              </div>
+            )}
             {assets.map((asset, index) => {
               const active = index === effectiveIndex
               const tags = extractTags(asset.metadataJson)
@@ -275,6 +366,7 @@ export default function TrackViewer({
                 sessionId={sessionId}
                 gateCleared={gateCleared}
                 onSummarize={chatConfig.enabled ? handleSummarize : undefined}
+                showInlineDownload={false}
               />
             </GateOverlay>
           </div>
@@ -326,6 +418,8 @@ export default function TrackViewer({
         currentAssetId={currentAsset?.id}
         chatConfig={chatConfig}
         summarizeToken={summarizeToken}
+        ctaChatToken={ctaChatToken}
+        ctaChatMessage={brand?.cta?.chatMessage}
       />
     </div>
   )
