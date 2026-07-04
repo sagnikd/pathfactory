@@ -50,6 +50,16 @@ function withCloudinaryStartOffset(url: string, seconds: number): string {
   }
 }
 
+// Resume position for YouTube/Cloudinary iframes is a wall-clock estimate
+// (no access to the real player position — see comment above YouTubeViewer).
+// Cap how far it can drift so a backgrounded/idle tab left open for hours
+// can't produce a nonsense "Resuming from 3:58:26".
+const MAX_RESUME_SECONDS = 3 * 60 * 60 // 3 hours
+
+function isPageActive(): boolean {
+  return document.visibilityState === 'visible' && document.hasFocus()
+}
+
 function formatTime(secs: number): string {
   const h = Math.floor(secs / 3600)
   const m = Math.floor((secs % 3600) / 60)
@@ -228,17 +238,27 @@ function VideoViewer({ asset, sessionId, onSummarize }: any) {
 
 function CloudinaryViewer({ url, asset, sessionId, onSummarize }: any) {
   const storageKey = `cloudinary-time-${asset.id}`
-  const initialSavedTime = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
+  const initialSavedTime = Math.min(
+    Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0),
+    MAX_RESUME_SECONDS
+  )
   const [resumeFrom, setResumeFrom] = useState(initialSavedTime)
   const [src, setSrc] = useState(() => withCloudinaryStartOffset(url, initialSavedTime))
   const loadedAtRef = useRef(0)
+  const activeSecRef = useRef(0)
+  const lastTickRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const handleLoad = useCallback(() => {
     loadedAtRef.current = Date.now()
+    activeSecRef.current = 0
+    lastTickRef.current = Date.now()
     if (timerRef.current) clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      const pos = resumeFrom + (Date.now() - loadedAtRef.current) / 1000
+      const now = Date.now()
+      if (isPageActive()) activeSecRef.current += (now - lastTickRef.current) / 1000
+      lastTickRef.current = now
+      const pos = Math.min(resumeFrom + activeSecRef.current, resumeFrom + MAX_RESUME_SECONDS)
       localStorage.setItem(storageKey, String(pos))
     }, 5000)
     trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
@@ -248,7 +268,7 @@ function CloudinaryViewer({ url, asset, sessionId, onSummarize }: any) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
       if (loadedAtRef.current > 0) {
-        const pos = resumeFrom + (Date.now() - loadedAtRef.current) / 1000
+        const pos = Math.min(resumeFrom + activeSecRef.current, resumeFrom + MAX_RESUME_SECONDS)
         if (pos > resumeFrom + 3) localStorage.setItem(storageKey, String(pos))
       }
     }
@@ -317,20 +337,31 @@ function CloudinaryViewer({ url, asset, sessionId, onSummarize }: any) {
 // YT.Player directly mutates React-owned DOM nodes (replaces them) which causes
 // React's "insertBefore" / "NotFoundError" crash on every re-render.
 // A plain <iframe> is owned by React — no external mutations, no crashes, no
-// black screen. Position is saved via wall-clock estimation (±5 s accuracy).
+// black screen. Position is saved via wall-clock estimation while the tab is
+// visible and focused (±5 s accuracy), capped at MAX_RESUME_SECONDS.
 
 function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
   const storageKey  = `yt-time-${asset.id}`
-  const savedTime   = Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0)
+  const savedTime   = Math.min(
+    Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0),
+    MAX_RESUME_SECONDS
+  )
   const loadedAtRef = useRef(0)
+  const activeSecRef = useRef(0)
+  const lastTickRef = useRef(0)
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
   const videoId     = getYouTubeVideoId(url)
 
   const handleLoad = useCallback(() => {
     loadedAtRef.current = Date.now()
+    activeSecRef.current = 0
+    lastTickRef.current = Date.now()
     clearInterval(timerRef.current!)
     timerRef.current = setInterval(() => {
-      const pos = savedTime + (Date.now() - loadedAtRef.current) / 1000
+      const now = Date.now()
+      if (isPageActive()) activeSecRef.current += (now - lastTickRef.current) / 1000
+      lastTickRef.current = now
+      const pos = Math.min(savedTime + activeSecRef.current, savedTime + MAX_RESUME_SECONDS)
       localStorage.setItem(storageKey, String(pos))
     }, 5000)
     trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
@@ -340,7 +371,7 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
     return () => {
       clearInterval(timerRef.current!)
       if (loadedAtRef.current > 0) {
-        const pos = savedTime + (Date.now() - loadedAtRef.current) / 1000
+        const pos = Math.min(savedTime + activeSecRef.current, savedTime + MAX_RESUME_SECONDS)
         if (pos > savedTime + 3) localStorage.setItem(storageKey, String(pos))
       }
     }
