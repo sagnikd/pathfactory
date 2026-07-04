@@ -3,7 +3,15 @@
 import { useState, useEffect } from 'react'
 
 const CONSENT_KEY = 'cookie_consent_v1'
+const CONSENT_COOKIE = 'cookie_consent'
 const CONSENT_TTL_MS = 1000 * 60 * 60 * 24 * 30 * 6 // 6 months
+const CONSENT_TTL_SECONDS = CONSENT_TTL_MS / 1000
+
+// Written as a real cookie (not just localStorage) so middleware.ts can read
+// it server-side and skip setting the visitorId tracking cookie on rejection.
+function setConsentCookie(value: 'accepted' | 'rejected') {
+  document.cookie = `${CONSENT_COOKIE}=${value}; path=/; max-age=${CONSENT_TTL_SECONDS}; SameSite=Lax`
+}
 
 export function CookieBanner() {
   const [visible, setVisible] = useState(false)
@@ -16,6 +24,16 @@ export function CookieBanner() {
 
   function accept() {
     localStorage.setItem(CONSENT_KEY, String(Date.now()))
+    setConsentCookie('accepted')
+    setVisible(false)
+  }
+
+  function reject() {
+    localStorage.setItem(CONSENT_KEY, String(Date.now()))
+    setConsentCookie('rejected')
+    // Remove the non-essential tracking cookie immediately rather than
+    // waiting for it to expire naturally.
+    document.cookie = 'visitorId=; path=/; max-age=0'
     setVisible(false)
   }
 
@@ -57,6 +75,12 @@ export function CookieBanner() {
           >
             Cookie Settings
           </a>
+          <button
+            onClick={reject}
+            className="rounded px-4 py-2 text-xs font-semibold border bg-background text-foreground hover:bg-muted transition-colors"
+          >
+            Reject All
+          </button>
           <button
             onClick={accept}
             className="rounded px-4 py-2 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"

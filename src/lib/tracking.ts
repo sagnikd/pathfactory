@@ -19,7 +19,16 @@ let eventQueue: QueuedEvent[] = [];
 let flushInterval: NodeJS.Timeout | null = null;
 let currentVisitorId: string | null = null;
 
+function hasRejectedCookies(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.cookie.split('; ').some((c) => c === 'cookie_consent=rejected')
+}
+
 export async function initializeTracking() {
+  // Visitor explicitly rejected cookies — don't fingerprint, don't (re)set
+  // the visitorId tracking cookie, don't queue/flush analytics events.
+  if (hasRejectedCookies()) return null
+
   currentVisitorId = await getVisitorFingerprint();
 
   if (typeof window !== 'undefined') {
@@ -44,6 +53,7 @@ export async function initializeTracking() {
 }
 
 export function trackEvent(event: TrackEventPayload) {
+  if (!event.sessionId || hasRejectedCookies()) return
   eventQueue.push({
     ...event,
     ts: new Date().toISOString()

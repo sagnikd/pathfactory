@@ -5,7 +5,10 @@ import { v4 as uuidv4 } from 'uuid'
 export async function middleware(request: NextRequest) {
   const response = await updateSession(request)
 
-  if (!request.cookies.has('visitorId')) {
+  // visitorId is a non-essential tracking cookie — don't set it if the
+  // visitor explicitly rejected cookies via the consent banner.
+  const cookieConsent = request.cookies.get('cookie_consent')?.value
+  if (cookieConsent !== 'rejected' && !request.cookies.has('visitorId')) {
     response.cookies.set('visitorId', uuidv4(), {
       path: '/',
       maxAge: 60 * 60 * 24 * 365, // 1 year
