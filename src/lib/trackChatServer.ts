@@ -361,7 +361,8 @@ const JSON_OUTPUT_INSTRUCTIONS = [
   'OUTPUT FORMAT — always respond with a single JSON object and nothing else:',
   '{"answer": "your reply text shown to the visitor", "suggestedQuestions": ["short clickable option 1", "short clickable option 2", ...]}',
   '- "answer" is required plain text (no markdown).',
-  '- "suggestedQuestions" is optional. Use it for clickable follow-up questions, OR for a short list of selectable options you just offered the visitor (e.g. industries, roles). Omit or use an empty array when there is nothing to offer.',
+  '- "suggestedQuestions" is optional. Use it ONLY for a closed set of valid, clickable answers to a multiple-choice question you just asked (e.g. a list of industries or roles) — each entry must be a complete answer someone could click as-is.',
+  '- Never use "suggestedQuestions" for open-ended questions expecting free text (name, email, company, or any other written answer) — asking someone their name and offering clickable category labels like "First name" or "Nickname" is wrong; leave it as an empty array instead and let them type their answer.',
   '- Never wrap the JSON in code fences. Output ONLY the JSON object.',
 ]
 
