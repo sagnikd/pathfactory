@@ -229,10 +229,13 @@ type Props = {
   bypassGate?: boolean
   onUnlock?: () => void
   onSubmit?: (fields: Record<string, string>) => void  // fired with form values on first submission
+  // Increment to force the gate form open immediately, ignoring the configured
+  // delay — used when an anonymous visitor tries to download an asset early.
+  forceShowToken?: number
   children: React.ReactNode
 }
 
-export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false, onUnlock, onSubmit, children }: Props) {
+export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false, onUnlock, onSubmit, forceShowToken, children }: Props) {
   const enabled      = gateConfig?.enabled ?? false
   const delaySeconds = gateConfig?.delaySeconds ?? 0
   const isHardGate   = delaySeconds === 0
@@ -269,6 +272,16 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
     }
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [enabled, bypassGate, trackId, delaySeconds])
+
+  // ── force the form open on demand (e.g. anonymous visitor tried to download) ─
+  const prevForceShowTokenRef = useRef(forceShowToken)
+  useEffect(() => {
+    if (!enabled || bypassGate || submitted) return
+    if (forceShowToken === undefined || prevForceShowTokenRef.current === forceShowToken) return
+    prevForceShowTokenRef.current = forceShowToken
+    if (timerRef.current) clearTimeout(timerRef.current)
+    setShowForm(true)
+  }, [forceShowToken, enabled, bypassGate, submitted])
 
   // ── IP reverse-lookup once the form becomes visible ─────────────────────
   useEffect(() => {

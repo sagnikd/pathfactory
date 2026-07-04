@@ -25,6 +25,7 @@ interface TrackChatWidgetProps {
   ctaChatMessage?: string
   proactiveToken?: number
   proactiveAssetTitle?: string
+  downloadChatToken?: number
 }
 
 type ChatMessage = {
@@ -131,6 +132,7 @@ export function TrackChatWidget({
   ctaChatMessage,
   proactiveToken,
   proactiveAssetTitle,
+  downloadChatToken,
 }: TrackChatWidgetProps) {
   const firstName = visitorName?.trim().split(/\s+/)[0] || null
   const greeting: ChatMessage | null = firstName
@@ -156,6 +158,7 @@ export function TrackChatWidget({
   const prevSummarizeTokenRef = useRef(summarizeToken)
   const prevCtaChatTokenRef = useRef(ctaChatToken)
   const prevProactiveTokenRef = useRef(proactiveToken)
+  const prevDownloadChatTokenRef = useRef(downloadChatToken)
 
   const {
     accentColor,
@@ -235,6 +238,20 @@ export function TrackChatWidget({
     sendKickoff()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proactiveToken])
+
+  // Anonymous visitor tried to download a gated asset with no gate form
+  // configured — ask for their email conversationally instead of handing
+  // over the file or silently doing nothing.
+  useEffect(() => {
+    if (downloadChatToken === undefined || prevDownloadChatTokenRef.current === downloadChatToken) return
+    prevDownloadChatTokenRef.current = downloadChatToken
+    setIsOpen(true)
+    setMessages((prev) => [
+      ...prev,
+      { role: 'assistant', content: "I'd love to send that over — what's your email address?" },
+    ])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [downloadChatToken])
 
   if (!chatConfig.enabled) return null
 

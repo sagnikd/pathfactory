@@ -92,6 +92,29 @@ export default function TrackViewer({
   const [ctaChatToken, setCtaChatToken] = useState(0)
   const handleCtaChat = () => setCtaChatToken((t) => t + 1)
 
+  // An anonymous visitor clicking "download" shouldn't get the asset for
+  // free — force the gate form if one's configured, or fall back to asking
+  // for an email via chat, rather than either handing it over or hiding the
+  // download affordance entirely.
+  const [downloadGateToken, setDownloadGateToken] = useState(0)
+  const [downloadChatToken, setDownloadChatToken] = useState(0)
+  // No form-based gate exists to track "already asked" — nudge via chat once
+  // per page load rather than either blocking forever or re-asking every click.
+  const downloadChatAskedRef = useRef(false)
+  const handleDownloadClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (gateConfig?.enabled) {
+      if (gateCleared) return
+      e.preventDefault()
+      setDownloadGateToken((t) => t + 1)
+      return
+    }
+    if (chatConfig.enabled && !downloadChatAskedRef.current) {
+      downloadChatAskedRef.current = true
+      e.preventDefault()
+      setDownloadChatToken((t) => t + 1)
+    }
+  }
+
   // ── Proactive engagement trigger (only when a custom system prompt is
   // configured) — pops the chat open on its own once the visitor has viewed
   // 3+ assets, spent 90+s on one asset, or scrolled 50%+ of a document.
@@ -315,13 +338,14 @@ export default function TrackViewer({
                   >
                     <FacebookIcon className="w-4 h-4" />
                   </a>
-                  {gateCleared && downloadHref && (
+                  {downloadHref && (
                     <a
                       href={downloadHref}
                       download
-                      target="_blank"
+                      target={gateCleared ? '_blank' : undefined}
                       rel="noopener noreferrer"
                       aria-label="Download current asset"
+                      onClick={handleDownloadClick}
                       className="w-8 h-8 rounded-md border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
                     >
                       <Download className="w-4 h-4" />
@@ -402,6 +426,7 @@ export default function TrackViewer({
               bypassGate={isKnownVisitor}
               onUnlock={() => setGateCleared(true)}
               onSubmit={fields => setSubmittedFields(fields)}
+              forceShowToken={downloadGateToken}
             >
               <AssetViewer
                 key={currentAsset.id}
@@ -503,6 +528,7 @@ export default function TrackViewer({
         ctaChatMessage={brand?.cta?.chatMessage}
         proactiveToken={proactiveToken}
         proactiveAssetTitle={currentAsset?.displayTitle ?? currentAsset?.title}
+        downloadChatToken={downloadChatToken}
       />
     </div>
   )
