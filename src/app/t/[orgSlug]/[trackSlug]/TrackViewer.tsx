@@ -225,11 +225,14 @@ export default function TrackViewer({
 
   // view event now fired by AssetViewer after 15 s of active engagement
 
-  // Keep URL in sync with current asset so each asset has a shareable link
+  // Keep URL in sync with current asset so each asset has a shareable link.
+  // Also strip any email-campaign identity params once captured server-side
+  // — no reason for that PII to keep sitting in the address bar/referrers.
   useEffect(() => {
-    if (layout === 'single') return
     const url = new URL(window.location.href)
-    url.searchParams.set('asset', String(effectiveIndex + 1))
+    url.searchParams.delete('email')
+    url.searchParams.delete('fname')
+    if (layout !== 'single') url.searchParams.set('asset', String(effectiveIndex + 1))
     window.history.replaceState(null, '', url.toString())
   }, [effectiveIndex, layout])
 
@@ -255,6 +258,9 @@ export default function TrackViewer({
 
   const handleCtaClick = () => {
     if (!brandCta) return
+    if (sessionId && currentAsset) {
+      trackEvent({ sessionId, assetId: currentAsset.id, eventType: 'cta_click' })
+    }
     if (brandCta.action === 'chat') handleCtaChat()
     else if (brandCta.url) window.open(brandCta.url, '_blank', 'noopener,noreferrer')
   }
@@ -471,6 +477,16 @@ export default function TrackViewer({
               onScrollProgress={handleScrollProgress}
             />
           </GateOverlay>
+
+          {layout === 'binge' && brandCta && (
+            <button
+              onClick={handleCtaClick}
+              className="absolute top-3 right-3 z-20 flex items-center gap-1.5 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold shadow-md hover:bg-primary/90 transition-colors"
+            >
+              <Megaphone className="w-4 h-4" />
+              {brandCta.label || "Let's talk"}
+            </button>
+          )}
 
           {layout === 'binge' && prevAsset && (
             <div className="group absolute left-3 top-1/2 -translate-y-1/2 z-20 flex items-center gap-3">

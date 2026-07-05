@@ -1,11 +1,12 @@
 import { db } from '@/db'
-import { engagements, sessions, visitors, assets, companyAliases } from '@/db/schema'
-import { eq, count, sql, desc, inArray, and, gte, lte } from 'drizzle-orm'
+import { engagements, sessions, visitors, assets, companyAliases, tracks } from '@/db/schema'
+import { eq, count, sql, inArray, and, gte, lte } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import AnalyticsCharts from './AnalyticsCharts'
+import AnalyticsCharts, { CampaignDonut } from './AnalyticsCharts'
 import { AnalyticsTables, TrackStatsTable, ExperienceStatsTable, type TrackStatRow, type ExperienceStatRow } from './SortableAnalyticsTables'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 import { DateRangeFilter } from './DateRangeFilter'
+import { TrackFilter } from './TrackFilter'
 import { Suspense } from 'react'
 
 function fmtDwell(secs: number): string {
@@ -102,7 +103,7 @@ function toSqlTimestamp(date: Date): string {
 export default async function AnalyticsDashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string | string[]; to?: string | string[] }>
+  searchParams: Promise<{ from?: string | string[]; to?: string | string[]; trackId?: string | string[] }>
 }) {
   const { dbUser } = await getDashboardAuthContext()
   const orgId = dbUser.organizationId
@@ -110,6 +111,7 @@ export default async function AnalyticsDashboard({
   const sp       = await searchParams
   const rawFrom  = getSearchParam(sp.from)
   const rawTo    = getSearchParam(sp.to)
+  const trackId  = getSearchParam(sp.trackId) || null
   let dateFrom   = parseDateParam(rawFrom)
   let dateTo     = parseDateParam(rawTo, true)
 
@@ -134,6 +136,10 @@ export default async function AnalyticsDashboard({
     ? sql` AND e.ts <= ${dateToSql}::timestamp`
     : sql``
 
+  // Track filter fragment for raw SQL — appended alongside dateFilter wherever
+  // a query already joins a sessions row aliased `s`.
+  const trackFilter = trackId ? sql` AND s.track_id = ${trackId}::uuid` : sql``
+
   // ── 1. KPI counts ──────────────────────────────────────────────────────────
   const orgAssets   = await db.select({ id: assets.id }).from(assets).where(eq(assets.organizationId, orgId))
   const orgAssetIds = orgAssets.map(a => a.id)
@@ -142,7 +148,11 @@ export default async function AnalyticsDashboard({
   let totalSessions = 0
 
   if (orgAssetIds.length > 0) {
-    const baseWhere = and(inArray(engagements.assetId, orgAssetIds), ...engDateConds)
+    const baseWhere = and(
+      inArray(engagements.assetId, orgAssetIds),
+      ...engDateConds,
+      ...(trackId ? [eq(sessions.trackId, trackId)] : []),
+    )
 
     const sessionsRes = await db.select({ count: count() })
       .from(sessions)
@@ -160,24 +170,45 @@ export default async function AnalyticsDashboard({
     totalVisitors = visitorsRes.length
   }
 
+  // Org-wide count of CTA ("Talk to us") clicks, date + track scoped.
+  const ctaClicksRes = await db.execute<{ count: number }>(sql`
+    SELECT COUNT(*)::int AS count
+    FROM engagements e
+    JOIN sessions s ON s.id = e.session_id
+    JOIN assets   a ON a.id = e.asset_id
+    WHERE a.organization_id = ${orgId}::uuid
+      AND e.event_type = 'cta_click'
+      ${dateFilter}
+      ${trackFilter}
+  `)
+  const ctaClicks = Array.from(ctaClicksRes)[0]?.count ?? 0
+
   // ── 2. Funnel / avg dwell (existing) ──────────────────────────────────────
-  const topAssets = await db.select({
-    assetId: assets.id,
-    title:   assets.title,
-    views: sql<number>`count(CASE WHEN ${engagements.eventType} = 'view' THEN 1 END)`.mapWith(Number),
-    avgDwellTime: sql<number>`
-      count(CASE WHEN ${engagements.eventType} = 'dwell_tick' THEN 1 END) * 10.0
-      / GREATEST(
-          count(DISTINCT CASE WHEN ${engagements.eventType} = 'dwell_tick' THEN ${engagements.sessionId} END),
-          1
-        )`.mapWith(Number),
-  })
-  .from(assets)
-  .leftJoin(engagements, and(eq(assets.id, engagements.assetId), ...engDateConds))
-  .where(eq(assets.organizationId, orgId))
-  .groupBy(assets.id, assets.title)
-  .orderBy(desc(sql`count(CASE WHEN ${engagements.eventType} = 'view' THEN 1 END)`))
-  .limit(5)
+  type TopAssetRow = { asset_id: string; title: string; views: number; avg_dwell_time: number }
+  const topAssetsRes = await db.execute<TopAssetRow>(sql`
+    SELECT
+      a.id AS asset_id,
+      a.title,
+      COUNT(CASE WHEN e.event_type = 'view' THEN 1 END)::int AS views,
+      (
+        COUNT(CASE WHEN e.event_type = 'dwell_tick' THEN 1 END) * 10.0
+        / GREATEST(COUNT(DISTINCT CASE WHEN e.event_type = 'dwell_tick' THEN e.session_id END), 1)
+      ) AS avg_dwell_time
+    FROM assets a
+    LEFT JOIN engagements e ON e.asset_id = a.id ${dateFilter}
+    LEFT JOIN sessions s ON s.id = e.session_id
+    WHERE a.organization_id = ${orgId}::uuid
+      ${trackFilter}
+    GROUP BY a.id, a.title
+    ORDER BY views DESC
+    LIMIT 5
+  `)
+  const topAssets = (Array.from(topAssetsRes) as TopAssetRow[]).map(r => ({
+    assetId: r.asset_id,
+    title: r.title,
+    views: r.views,
+    avgDwellTime: Number(r.avg_dwell_time),
+  }))
 
   const funnelData     = topAssets.map(a => ({ name: a.title.substring(0, 15) + (a.title.length > 15 ? '...' : ''), views: a.views }))
   const engagedAssets  = topAssets.filter(a => a.avgDwellTime > 0)
@@ -195,7 +226,9 @@ export default async function AnalyticsDashboard({
       COUNT(CASE WHEN e.event_type = 'view' THEN 1 END)::int AS views
     FROM assets a
     LEFT JOIN engagements e ON e.asset_id = a.id ${dateFilter}
+    LEFT JOIN sessions s ON s.id = e.session_id
     WHERE a.organization_id = ${orgId}::uuid
+      ${trackFilter}
     GROUP BY a.id, a.title
     HAVING COUNT(CASE WHEN e.event_type = 'dwell_tick' THEN 1 END) > 0
     ORDER BY dwell_secs DESC
@@ -226,7 +259,9 @@ export default async function AnalyticsDashboard({
     FROM assets a
     JOIN engagements e ON e.asset_id = a.id AND e.event_type = 'view'
     JOIN session_counts sc ON sc.session_id = e.session_id
+    JOIN sessions s ON s.id = e.session_id
     WHERE a.organization_id = ${orgId}::uuid
+      ${trackFilter}
     GROUP BY a.id, a.title
     HAVING COUNT(DISTINCT e.session_id) > 0
     ORDER BY binge_rate DESC, total_sessions DESC
@@ -266,6 +301,7 @@ export default async function AnalyticsDashboard({
     WHERE a.organization_id = ${orgId}::uuid
       AND vc.company IS NOT NULL
       AND vc.company <> ''
+      ${trackFilter}
     GROUP BY vc.company
     ORDER BY contacts DESC, dwell_secs DESC
     LIMIT 50
@@ -317,11 +353,34 @@ export default async function AnalyticsDashboard({
     JOIN assets a ON a.id = e.asset_id
     LEFT JOIN leads l ON l.visitor_id = v.id
     WHERE a.organization_id = ${orgId}::uuid
+      ${trackFilter}
     GROUP BY v.id, v.captured_email
     ORDER BY dwell_secs DESC
     LIMIT 10
   `)
   const topVisitors = Array.from(visitorsRes2) as VisitorRow[]
+
+  // ── 6b. Campaign sources — session volume by UTM source ──────────────────
+  type CampaignRow = { source: string; sessions: number }
+  const campaignRes = await db.execute<CampaignRow>(sql`
+    SELECT
+      COALESCE(NULLIF(TRIM(s.utm_source), ''), 'Direct / Other') AS source,
+      COUNT(DISTINCT s.id)::int AS sessions
+    FROM sessions s
+    JOIN engagements e ON e.session_id = s.id ${dateFilter}
+    JOIN assets      a ON a.id = e.asset_id
+    WHERE a.organization_id = ${orgId}::uuid
+      ${trackFilter}
+    GROUP BY 1
+    ORDER BY sessions DESC
+  `)
+  const campaignData = Array.from(campaignRes) as CampaignRow[]
+
+  // All tracks in the org, for the track-picker filter.
+  const allTracks = await db.select({ id: tracks.id, title: tracks.title })
+    .from(tracks)
+    .where(eq(tracks.organizationId, orgId))
+    .orderBy(tracks.title)
 
   // ── 7. Track & Experience performance ────────────────────────────────────────
   // All tracks metadata (needed to detect experiences even if they have 0 sessions)
@@ -345,6 +404,7 @@ export default async function AnalyticsDashboard({
     FROM sessions s
     JOIN tracks t      ON t.id = s.track_id AND t.organization_id = ${orgId}::uuid
     JOIN engagements e ON e.session_id = s.id ${dateFilter}
+    WHERE true ${trackFilter}
     GROUP BY s.track_id
   `)
   const trackStatMap = new Map(
@@ -419,12 +479,15 @@ export default async function AnalyticsDashboard({
           <p className="text-sm text-muted-foreground mt-0.5">{rangeLabel}</p>
         </div>
         <Suspense>
-          <DateRangeFilter />
+          <div className="flex flex-wrap items-center gap-2">
+            <TrackFilter tracks={allTracks} />
+            <DateRangeFilter />
+          </div>
         </Suspense>
       </div>
 
       {/* KPI cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Visitors</CardTitle>
@@ -450,6 +513,15 @@ export default async function AnalyticsDashboard({
             <p className="text-xs text-muted-foreground">
               Across {engagedAssets.length} asset{engagedAssets.length !== 1 ? 's' : ''} with engagement
             </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">CTA Clicks</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{ctaClicks}</div>
+            <p className="text-xs text-muted-foreground">&quot;Talk to us&quot; button clicks</p>
           </CardContent>
         </Card>
       </div>
@@ -531,6 +603,17 @@ export default async function AnalyticsDashboard({
           </CardContent>
         </Card>
       </div>
+
+      {/* Row 5: Campaign sources donut — clicks that landed on tracks, by UTM source */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Campaign Sources</CardTitle>
+          <p className="text-xs text-muted-foreground">Sessions landing on tracks, broken down by <code>utm_source</code>.</p>
+        </CardHeader>
+        <CardContent>
+          <CampaignDonut data={campaignData} />
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -31,6 +31,7 @@ export const eventTypeEnum = pgEnum("event_type", [
   "video_complete",
   "click",
   "dwell_tick",
+  "cta_click",
 ]);
 
 // Organization (Tenant)
@@ -128,6 +129,9 @@ export const sessions = pgTable("sessions", {
   endedAt: timestamp("ended_at"),
   deviceJson: jsonb("device_json"),
   referrer: text("referrer"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
 });
 
 // Engagement

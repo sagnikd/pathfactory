@@ -6,7 +6,47 @@ import { cookies, headers } from 'next/headers'
 import TrackViewer from './TrackViewer'
 import { CookieBanner } from '@/components/CookieBanner'
 import { lookupIp } from '@/lib/ipLookup'
+import { computeLeadScores } from '@/lib/leadScore'
+import { processAbmLeadMatch } from '@/lib/abm'
 import type { Metadata } from 'next'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// A campaign link carries `email`/`fname` for a recipient whose identity is
+// already known — auto-capture them as a lead the same way the gate form
+// would, without making them fill it in. No-ops (doesn't re-insert) if this
+// visitor+email combo already has a lead, so repeat clicks/reloads of the
+// same link don't spam duplicate lead rows.
+async function identifyVisitorFromUrl(
+  visitor: { id: string; capturedEmail: string | null },
+  email: string,
+  fname: string | null,
+  trackId: string
+) {
+  const existing = await db.select({ id: leads.id }).from(leads)
+    .where(and(eq(leads.visitorId, visitor.id), eq(leads.email, email))).limit(1)
+  if (existing.length) return
+
+  const scoreMap = await computeLeadScores([visitor.id])
+  const [lead] = await db.insert(leads).values({
+    visitorId: visitor.id,
+    email,
+    formResponsesJson: fname ? { firstName: fname, source: 'email_campaign' } : { source: 'email_campaign' },
+    score: scoreMap[visitor.id]?.total ?? 0,
+  }).returning({ id: leads.id })
+
+  if (!visitor.capturedEmail) {
+    await db.update(visitors).set({ capturedEmail: email }).where(eq(visitors.id, visitor.id))
+  }
+
+  await processAbmLeadMatch({
+    trackId,
+    visitorId: visitor.id,
+    leadId: lead.id,
+    email,
+    formFields: { firstName: fname },
+  })
+}
 
 type TrackTheme = {
   seoTitle?: string | null
@@ -78,7 +118,7 @@ export default async function PublicTrackPage({
   searchParams,
 }: {
   params: Promise<{ orgSlug: string, trackSlug: string }>
-  searchParams: Promise<{ asset?: string; assetId?: string }>
+  searchParams: Promise<{ asset?: string; assetId?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string; email?: string; fname?: string }>
 }) {
   const { orgSlug, trackSlug } = await params
   const sp = await searchParams
@@ -87,6 +127,13 @@ export default async function PublicTrackPage({
   // Both are resolved to a 0-based index, clamped after assets are loaded.
   const requestedAssetPosition = sp.asset ? Math.max(1, parseInt(sp.asset, 10)) - 1 : null
   const requestedAssetId = sp.assetId ?? null
+
+  // Personalized email-campaign link — e.g. &email=s.d@x.com&fname=Sagnik.
+  // Trusted the same way any ESP-style tracking link is: only the real
+  // recipient's inbox should ever have this URL.
+  const rawUrlEmail = sp.email?.trim() || null
+  const urlEmail = rawUrlEmail && EMAIL_RE.test(rawUrlEmail) ? rawUrlEmail : null
+  const urlFname = sp.fname?.trim() || null
 
   // Fetch org
   const orgs = await db.select().from(organizations).where(eq(organizations.slug, orgSlug))
@@ -189,6 +236,15 @@ export default async function PublicTrackPage({
         }
       }
 
+      // Campaign link identified this visitor by URL — auto-capture the lead
+      // and let the URL-supplied name win (it's fresher/more specific to this
+      // exact click than whatever the DB lookup above produced, if anything).
+      if (urlEmail) {
+        await identifyVisitorFromUrl(visitor, urlEmail, urlFname, track.id)
+        isKnownVisitor = true
+        returningVisitorName = urlFname || returningVisitorName
+      }
+
       // Resolve visitor IP → company (best-effort, non-blocking failure)
       const reqHeaders = await headers()
       const rawIp = reqHeaders.get('x-nf-client-connection-ip')           // Netlify edge
@@ -207,6 +263,9 @@ export default async function PublicTrackPage({
           country: ipInfo.country,
           city:    ipInfo.city,
         },
+        utmSource:   sp.utm_source?.trim()   || null,
+        utmMedium:   sp.utm_medium?.trim()   || null,
+        utmCampaign: sp.utm_campaign?.trim() || null,
       }).returning()
 
       if (newSession) sessionId = newSession.id
