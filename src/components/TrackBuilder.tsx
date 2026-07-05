@@ -66,6 +66,7 @@ type TrackData = {
   } & Record<string, unknown>) | null
 }
 
+// Core fields: always present, cannot be deleted (only toggled)
 const DEFAULT_LEAD_FIELDS: LeadField[] = [
   { name: 'email',     label: 'Work email',  type: 'email', enabled: true,  required: true  },
   { name: 'firstName', label: 'First name',  type: 'text',  enabled: true,  required: false },
@@ -75,6 +76,10 @@ const DEFAULT_LEAD_FIELDS: LeadField[] = [
   { name: 'phone',     label: 'Phone',       type: 'tel',   enabled: false, required: false },
   { name: 'country',   label: 'Country',     type: 'text',  enabled: false, required: false },
   { name: 'city',      label: 'City',        type: 'text',  enabled: false, required: false },
+]
+
+// Consent fields pre-filled on new tracks — removable (not built-in)
+const DEFAULT_CONSENT_FIELDS: LeadField[] = [
   {
     name: 'consent_federal_govt',
     type: 'consent',
@@ -93,7 +98,7 @@ const DEFAULT_LEAD_FIELDS: LeadField[] = [
   },
 ]
 
-// Names that belong to the built-in set — can be toggled but not deleted
+// Only core (non-consent) fields are protected from deletion
 const BUILTIN_NAMES = new Set(DEFAULT_LEAD_FIELDS.map(f => f.name))
 
 function AssetIcon({ type }: { type: Asset['type'] }) {
@@ -161,8 +166,11 @@ export function TrackBuilder({
   const [lcDescription, setLcDescription] = useState(existingGate?.description ?? 'Fill in your details to keep exploring.')
   const [lcFields, setLcFields] = useState<LeadField[]>(() => {
     const saved = existingGate?.fields
-    if (!saved || saved.length === 0) return DEFAULT_LEAD_FIELDS
-    // Merge: keep saved fields, append any new built-ins not yet in saved config
+    if (!saved || saved.length === 0) {
+      // New track: core fields + consent fields pre-filled (removable)
+      return [...DEFAULT_LEAD_FIELDS, ...DEFAULT_CONSENT_FIELDS]
+    }
+    // Existing track: keep saved, append any missing core built-ins (not consent)
     const savedNames = new Set(saved.map((f: LeadField) => f.name))
     const newBuiltins = DEFAULT_LEAD_FIELDS.filter(f => !savedNames.has(f.name))
     return [...saved, ...newBuiltins]
