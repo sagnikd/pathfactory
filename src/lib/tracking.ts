@@ -19,6 +19,10 @@ let eventQueue: QueuedEvent[] = [];
 let flushInterval: NodeJS.Timeout | null = null;
 let currentVisitorId: string | null = null;
 
+export function getCurrentVisitorId(): string | null {
+  return currentVisitorId
+}
+
 function hasRejectedCookies(): boolean {
   if (typeof document === 'undefined') return false
   return document.cookie.split('; ').some((c) => c === 'cookie_consent=rejected')

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { format } from 'date-fns'
+import { Trash2 } from 'lucide-react'
 import type { ScoreBreakdown } from '@/lib/leadScore'
 
 type AnonVisit = {
@@ -29,7 +30,27 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
   liveScores: Record<string, ScoreBreakdown>
   anonymousTraffic: AnonVisit[]
 }) {
+  const [localLeads, setLocalLeads] = useState<any[]>(leads)
   const [selectedVisitorId, setSelectedVisitorId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  async function deleteLead(e: React.MouseEvent, leadId: string) {
+    e.stopPropagation()
+    if (!confirm('Delete this lead? This cannot be undone.')) return
+    setDeletingId(leadId)
+    try {
+      const res = await fetch('/api/leads', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId }) })
+      if (res.ok) {
+        setLocalLeads(prev => prev.filter(l => l.id !== leadId))
+        if (selectedVisitorId) {
+          const deleted = localLeads.find(l => l.id === leadId)
+          if (deleted?.visitorId === selectedVisitorId) setSelectedVisitorId(null)
+        }
+      }
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   // Friendly column labels for known field names
   const FIELD_LABELS: Record<string, string> = {
@@ -116,7 +137,7 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
           </CardHeader>
           <CardContent>
             <div className="divide-y">
-              {leads.map((lead: any) => {
+              {localLeads.map((lead: any) => {
                 const fields    = (lead.formResponsesJson as Record<string, string>) || {}
                 const scoreData = liveScores[lead.visitorId]
                 const score     = scoreData?.total ?? lead.score ?? 0
@@ -135,7 +156,7 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
                 return (
                   <div
                     key={lead.id}
-                    className={`flex items-start justify-between gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-colors rounded-lg ${selectedVisitorId === lead.visitorId ? 'bg-muted/50' : ''}`}
+                    className={`group/row flex items-start justify-between gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-colors rounded-lg ${selectedVisitorId === lead.visitorId ? 'bg-muted/50' : ''}`}
                     onClick={() => setSelectedVisitorId(lead.visitorId)}
                   >
                     <div className="min-w-0 flex-1">
@@ -157,39 +178,51 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
                       </p>
                     </div>
 
-                    {/* Score + breakdown */}
-                    <div className="text-right shrink-0 group relative">
-                      <p className={`text-xl font-bold ${scoreColour}`}>{score}</p>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Score</p>
+                    <div className="flex items-start gap-3 shrink-0">
+                      {/* Delete button — visible on row hover */}
+                      <button
+                        onClick={(e) => deleteLead(e, lead.id)}
+                        disabled={deletingId === lead.id}
+                        className="mt-1 p-1 rounded opacity-0 group-hover/row:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive text-muted-foreground disabled:opacity-40"
+                        title="Delete lead"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
 
-                      {/* Breakdown tooltip on hover */}
-                      {scoreData && (
-                        <div className="absolute right-0 top-full mt-1.5 z-10 w-52 rounded-lg border bg-popover p-3 shadow-lg text-xs hidden group-hover:block">
-                          <p className="font-semibold text-sm mb-2">Score breakdown</p>
-                          {[
-                            { label: 'Assets viewed',      value: scoreData.breadth },
-                            { label: 'Time on page',       value: scoreData.dwell },
-                            { label: 'Deep reads',         value: scoreData.depth },
-                            { label: 'Videos started',     value: scoreData.videoPlay },
-                            { label: 'Videos completed',   value: scoreData.videoFinish },
-                            { label: 'Return visits',      value: scoreData.returnVisit },
-                          ].map(row => (
-                            <div key={row.label} className="flex items-center justify-between gap-2 py-0.5">
-                              <span className="text-muted-foreground">{row.label}</span>
-                              <span className="font-medium tabular-nums">{row.value}</span>
+                      {/* Score + breakdown */}
+                      <div className="text-right group relative">
+                        <p className={`text-xl font-bold ${scoreColour}`}>{score}</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Score</p>
+
+                        {/* Breakdown tooltip on hover */}
+                        {scoreData && (
+                          <div className="absolute right-0 top-full mt-1.5 z-10 w-52 rounded-lg border bg-popover p-3 shadow-lg text-xs hidden group-hover:block">
+                            <p className="font-semibold text-sm mb-2">Score breakdown</p>
+                            {[
+                              { label: 'Assets viewed',      value: scoreData.breadth },
+                              { label: 'Time on page',       value: scoreData.dwell },
+                              { label: 'Deep reads',         value: scoreData.depth },
+                              { label: 'Videos started',     value: scoreData.videoPlay },
+                              { label: 'Videos completed',   value: scoreData.videoFinish },
+                              { label: 'Return visits',      value: scoreData.returnVisit },
+                            ].map(row => (
+                              <div key={row.label} className="flex items-center justify-between gap-2 py-0.5">
+                                <span className="text-muted-foreground">{row.label}</span>
+                                <span className="font-medium tabular-nums">{row.value}</span>
+                              </div>
+                            ))}
+                            <div className="border-t mt-2 pt-2 flex justify-between font-semibold">
+                              <span>Total</span>
+                              <span>{score}</span>
                             </div>
-                          ))}
-                          <div className="border-t mt-2 pt-2 flex justify-between font-semibold">
-                            <span>Total</span>
-                            <span>{score}</span>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
               })}
-              {leads.length === 0 && <p className="text-muted-foreground p-4">No leads captured yet.</p>}
+              {localLeads.length === 0 && <p className="text-muted-foreground p-4">No leads captured yet.</p>}
             </div>
           </CardContent>
         </Card>

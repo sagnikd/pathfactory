@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Sparkles } from 'lucide-react'
 import { clientGeoLookup } from '@/lib/geoLookup'
+import { getCurrentVisitorId } from '@/lib/tracking'
 
 export type LeadField = {
   name: string
@@ -121,11 +122,13 @@ function FieldInput({
   value,
   autoFilled,
   onChange,
+  error,
 }: {
   field: LeadField
   value: string
   autoFilled: boolean
   onChange: (val: string) => void
+  error?: string
 }) {
   if (field.type === 'consent') {
     return (
@@ -188,9 +191,10 @@ function FieldInput({
           placeholder={field.type === 'email' ? 'you@company.com' : ''}
           value={value}
           onChange={e => onChange(e.target.value)}
-          className={autoFilled ? 'border-primary/40 bg-primary/5' : ''}
+          className={`${autoFilled ? 'border-primary/40 bg-primary/5' : ''} ${error ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
         />
       )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   )
 }
@@ -200,6 +204,7 @@ function renderFieldGroups(
   values: Record<string, string>,
   autoFilled: Set<string>,
   onChange: (name: string, val: string) => void,
+  fieldErrors: Record<string, string> = {},
 ) {
   const fieldMap = new Map(fields.map(f => [f.name, f]))
   const rendered = new Set<string>()
@@ -223,8 +228,8 @@ function renderFieldGroups(
         rendered.add(canonB)
         out.push(
           <div key={`${canonA}+${canonB}`} className="grid grid-cols-2 gap-3">
-            <FieldInput field={fieldA} value={values[canonA] ?? ''} autoFilled={autoFilled.has(canonA)} onChange={v => onChange(canonA, v)} />
-            <FieldInput field={fieldB} value={values[canonB] ?? ''} autoFilled={autoFilled.has(canonB)} onChange={v => onChange(canonB, v)} />
+            <FieldInput field={fieldA} value={values[canonA] ?? ''} autoFilled={autoFilled.has(canonA)} onChange={v => onChange(canonA, v)} error={fieldErrors[canonA]} />
+            <FieldInput field={fieldB} value={values[canonB] ?? ''} autoFilled={autoFilled.has(canonB)} onChange={v => onChange(canonB, v)} error={fieldErrors[canonB]} />
           </div>
         )
         continue
@@ -248,6 +253,7 @@ function renderFieldGroups(
         value={values[field.name] ?? ''}
         autoFilled={autoFilled.has(field.name)}
         onChange={v => onChange(field.name, v)}
+        error={fieldErrors[field.name]}
       />
     )
   }
@@ -283,12 +289,13 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
   const delaySeconds = gateConfig?.delaySeconds ?? 0
   const isHardGate   = delaySeconds === 0
 
-  const [submitted,  setSubmitted]  = useState(false)
-  const [showForm,   setShowForm]   = useState(false)
-  const [loading,    setLoading]    = useState(false)
-  const [ipLoading,  setIpLoading]  = useState(false)
-  const [error,      setError]      = useState<string | null>(null)
-  const [values,     setValues]     = useState<Record<string, string>>({})
+  const [submitted,    setSubmitted]    = useState(false)
+  const [showForm,     setShowForm]     = useState(false)
+  const [loading,      setLoading]      = useState(false)
+  const [ipLoading,    setIpLoading]    = useState(false)
+  const [error,        setError]        = useState<string | null>(null)
+  const [fieldErrors,  setFieldErrors]  = useState<Record<string, string>>({})
+  const [values,       setValues]       = useState<Record<string, string>>({})
   // Track which fields were auto-filled so we can show the badge
   const [autoFilled, setAutoFilled] = useState<Set<string>>(new Set())
   // Bump this to force React to remount the overlay div if DevTools removes it
@@ -386,14 +393,15 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
 
   function handleChange(name: string, val: string) {
     setValues(prev => ({ ...prev, [name]: val }))
-    // User edited → remove auto-fill badge
     setAutoFilled(prev => { const s = new Set(prev); s.delete(name); return s })
+    if (fieldErrors[name]) setFieldErrors(prev => { const n = { ...prev }; delete n[name]; return n })
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setFieldErrors({})
     try {
       // visitorId comes from SSR but on a first-ever request the middleware
       // sets the cookie on the response (not the request), so the server
@@ -401,6 +409,7 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
       // fall back to reading it client-side.
       const effectiveVisitorId = visitorId
         ?? document.cookie.split('; ').find(c => c.startsWith('visitorId='))?.split('=')[1]
+        ?? getCurrentVisitorId()
         ?? null
       const res = await fetch('/api/leads', {
         method: 'POST',
@@ -414,7 +423,13 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
         onSubmit?.(values)
       } else {
         const body = await res.json().catch(() => ({}))
-        setError(body.error ?? 'Something went wrong. Please try again.')
+        const msg: string = body.error ?? 'Something went wrong. Please try again.'
+        // Route email-specific errors to the email field, not the bottom banner
+        if (msg.toLowerCase().includes('email') || msg.toLowerCase().includes('work email')) {
+          setFieldErrors({ email: msg })
+        } else {
+          setError(msg)
+        }
       }
     } catch {
       setError('Could not submit. Check your connection.')
@@ -490,10 +505,12 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
                       placeholder="you@company.com"
                       value={values['email'] ?? ''}
                       onChange={e => handleChange('email', e.target.value)}
+                      className={fieldErrors['email'] ? 'border-destructive focus-visible:ring-destructive/30' : ''}
                     />
+                    {fieldErrors['email'] && <p className="text-xs text-destructive">{fieldErrors['email']}</p>}
                   </div>
                 ) : (
-                  renderFieldGroups(activeFields, values, autoFilled, handleChange)
+                  renderFieldGroups(activeFields, values, autoFilled, handleChange, fieldErrors)
                 )}
 
                 {error && <p className="text-xs text-destructive">{error}</p>}

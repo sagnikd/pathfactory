@@ -3,7 +3,7 @@ import { engagements, sessions, visitors, assets, companyAliases, tracks } from 
 import { eq, count, sql, inArray, and, gte, lte } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AnalyticsCharts, { CampaignDonut } from './AnalyticsCharts'
-import { AnalyticsTables, TrackStatsTable, ExperienceStatsTable, type TrackStatRow, type ExperienceStatRow } from './SortableAnalyticsTables'
+import { AnalyticsTables, TrackStatsTable, ExperienceStatsTable, ContentClicksTable, type TrackStatRow, type ExperienceStatRow, type ContentClickRow } from './SortableAnalyticsTables'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
 import { DateRangeFilter } from './DateRangeFilter'
 import { TrackFilter } from './TrackFilter'
@@ -471,6 +471,35 @@ export default async function AnalyticsDashboard({
     .filter(t => t.sessions_count > 0)
     .sort((a, b) => b.sessions_count - a.sessions_count)
 
+  // ── Content link/button clicks ────────────────────────────────────────────
+  type ContentClickSqlRow = { asset_id: string; asset_title: string; label: string; href: string | null; click_count: number }
+  const contentClicksRes = await db.execute<ContentClickSqlRow>(sql`
+    SELECT
+      a.id   AS asset_id,
+      a.title AS asset_title,
+      COALESCE(e.payload_json->>'label', '(content area click)') AS label,
+      e.payload_json->>'href' AS href,
+      COUNT(*)::int AS click_count
+    FROM engagements e
+    JOIN assets   a ON a.id  = e.asset_id
+    JOIN sessions s ON s.id  = e.session_id
+    WHERE a.organization_id = ${orgId}::uuid
+      AND e.event_type = 'click'
+      AND e.payload_json IS NOT NULL
+      ${dateFilter}
+      ${trackFilter}
+    GROUP BY a.id, a.title, label, href
+    ORDER BY click_count DESC
+    LIMIT 100
+  `)
+  const contentClicks: ContentClickRow[] = (Array.from(contentClicksRes) as ContentClickSqlRow[]).map(r => ({
+    assetId:    r.asset_id,
+    assetTitle: r.asset_title,
+    label:      r.label,
+    href:       r.href ?? null,
+    clickCount: r.click_count,
+  }))
+
   const rangeLabel = rawFrom || rawTo
     ? [rawFrom, rawTo].filter(Boolean).join(' → ')
     : 'All time'
@@ -603,6 +632,20 @@ export default async function AnalyticsDashboard({
         allCompanyNames={allCompanyNames}
         aliases={aliases}
       />
+
+      {/* Content clicks table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Content Clicks</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Button and link clicks tracked inside assets. PDF annotation links show full text.
+            Article embeds show &quot;content area click&quot; (cross-origin — button text unavailable).
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ContentClicksTable rows={contentClicks} />
+        </CardContent>
+      </Card>
 
       {/* Row 4: Funnel + Top Performing Assets (existing) */}
       <div className="grid gap-4 md:grid-cols-2">

@@ -13,6 +13,7 @@ export type DwellRow        = { asset_id: string; title: string; dwell_secs: num
 export type BingeRow        = { asset_id: string; title: string; total_sessions: number; binge_sessions: number; binge_rate: number }
 export type TrackStatRow    = { track_id: string; title: string; slug: string; layout: string; sessions_count: number; unique_visitors: number; total_dwell_secs: number; views: number }
 export type ExperienceStatRow = { track_id: string; title: string; track_count: number; sessions_count: number; unique_visitors: number; total_dwell_secs: number; views: number }
+export type ContentClickRow = { assetId: string; assetTitle: string; label: string; href: string | null; clickCount: number }
 
 function fmtHMS(secs: number): string {
   const h = Math.floor(secs / 3600)
@@ -425,5 +426,58 @@ export function AnalyticsTables({ visitors, accounts, dwell, binge, dateFromSql,
         </Card>
       </div>
     </>
+  )
+}
+
+// ── Content Clicks Table ──────────────────────────────────────────────────────
+
+export function ContentClicksTable({ rows }: { rows: ContentClickRow[] }) {
+  const { sorted, sortCol, sortDir, toggle } = useSortedRows<ContentClickRow>(rows, 'clickCount')
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground px-4 py-6">No clicks recorded yet. Clicks on links inside PDF assets and article embeds will appear here.</p>
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/40">
+            <th className={`${thBase} text-left cursor-pointer`} onClick={() => toggle('assetTitle')}>
+              Asset <SortIcon col="assetTitle" sortCol={sortCol} sortDir={sortDir} />
+            </th>
+            <th className={`${thBase} text-left cursor-pointer`} onClick={() => toggle('label')}>
+              Button / Link <SortIcon col="label" sortCol={sortCol} sortDir={sortDir} />
+            </th>
+            <th className={`${thBase} text-left`}>URL</th>
+            <th className={`${thBase} text-right cursor-pointer`} onClick={() => toggle('clickCount')}>
+              Clicks <SortIcon col="clickCount" sortCol={sortCol} sortDir={sortDir} />
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {sorted.map((row, i) => (
+            <tr key={`${row.assetId}-${row.label}-${i}`} className={trBase}>
+              <td className={`${tdBase} max-w-[200px] truncate font-medium`} title={row.assetTitle}>{row.assetTitle}</td>
+              <td className={`${tdBase} max-w-[220px]`}>
+                <span className={`truncate block ${row.label === '(content area click)' ? 'text-muted-foreground italic' : ''}`} title={row.label}>
+                  {row.label}
+                </span>
+              </td>
+              <td className={`${tdBase} max-w-[200px]`}>
+                {row.href ? (
+                  <a href={row.href} target="_blank" rel="noopener noreferrer" className="text-primary underline truncate block text-xs" title={row.href}>
+                    {row.href.replace(/^https?:\/\//, '').slice(0, 40)}{row.href.length > 48 ? '…' : ''}
+                  </a>
+                ) : (
+                  <span className="text-muted-foreground text-xs">—</span>
+                )}
+              </td>
+              <td className={`${tdBase} text-right font-semibold tabular-nums`}>{row.clickCount}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

@@ -487,6 +487,23 @@ function PdfViewer({ asset, sessionId, onSummarize, gateCleared = true, showInli
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        onClick={(e) => {
+          const anchor = (e.target as Element).closest('a')
+          if (!anchor) return
+          const href = anchor.getAttribute('href') || undefined
+          // Annotation layer <a> tags are overlays — their textContent is "Link".
+          // Use elementsFromPoint to read the actual text layer spans underneath.
+          const rect = anchor.getBoundingClientRect()
+          const cx = rect.left + rect.width / 2
+          const cy = rect.top + rect.height / 2
+          const textBelow = document.elementsFromPoint(cx, cy)
+            .filter(el => el.tagName === 'SPAN' && el.closest('.react-pdf__Page__textContent'))
+            .map(el => el.textContent?.trim())
+            .filter(Boolean)
+            .join(' ')
+          const label = textBelow || anchor.getAttribute('aria-label') || anchor.getAttribute('title') || href || 'Link'
+          trackEvent({ sessionId, assetId: asset.id, eventType: 'click', payloadJson: { label, href, source: 'pdf_link' } })
+        }}
         className="flex-1 overflow-y-auto flex flex-col items-center py-8 gap-6 px-4"
       >
         <Document
@@ -543,7 +560,21 @@ function PdfViewer({ asset, sessionId, onSummarize, gateCleared = true, showInli
 
 function ArticleViewer({ asset, sessionId, onSummarize }: any) {
   const [iframeBlocked, setIframeBlocked] = useState(false)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
   const url: string = asset.sourceUrl || ''
+
+  // Detect clicks inside cross-origin iframe via window blur
+  useEffect(() => {
+    const handleBlur = () => {
+      if (document.activeElement === iframeRef.current) {
+        trackEvent({ sessionId, assetId: asset.id, eventType: 'click', payloadJson: { label: null, source: 'article_iframe' } })
+        // Restore focus so subsequent blur events keep firing
+        setTimeout(() => window.focus(), 0)
+      }
+    }
+    window.addEventListener('blur', handleBlur)
+    return () => window.removeEventListener('blur', handleBlur)
+  }, [sessionId, asset.id])
 
   // Some sites block iframe via X-Frame-Options. We can't detect this reliably,
   // so we show a fallback card alongside an always-visible "open in tab" button.
@@ -565,6 +596,7 @@ function ArticleViewer({ asset, sessionId, onSummarize }: any) {
 
       {/* iframe — will be blank if site sets X-Frame-Options */}
       <iframe
+        ref={iframeRef}
         src={url}
         className="flex-1 border-0 w-full"
         onError={() => setIframeBlocked(true)}
