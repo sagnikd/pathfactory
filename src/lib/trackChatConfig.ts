@@ -2,6 +2,8 @@
 // TrackChatConfig — parsed from track.themeJson
 // ---------------------------------------------------------------------------
 
+import { htmlToPlainText } from './systemPromptHtml'
+
 export type TrackChatConfig = {
   enabled: boolean
   accentColor: string
@@ -68,7 +70,7 @@ export function getTrackChatConfig(themeJson: unknown): TrackChatConfig {
 
   const systemPrompt =
     typeof chat.systemPrompt === 'string' && chat.systemPrompt.trim()
-      ? chat.systemPrompt.trim().slice(0, 6000)
+      ? htmlToPlainText(chat.systemPrompt.trim()).slice(0, 6000) || undefined
       : undefined
 
   return { enabled, accentColor, assistantName, meetingUrl, meetingCtaLabel, meetingCtaThreshold, suggestedQuestions, systemPrompt }

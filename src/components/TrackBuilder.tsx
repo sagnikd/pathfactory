@@ -20,6 +20,8 @@ import { createTrack, updateTrack } from '@/app/dashboard/tracks/actions'
 import type { LeadField, GateConfig } from '@/components/GateOverlay'
 import { AssetUploadDialog } from '@/components/AssetUploadDialog'
 import { RichLinkInput } from '@/components/RichLinkInput'
+import { SystemPromptEditor } from '@/components/SystemPromptEditor'
+import { markdownToHtml } from '@/lib/systemPromptHtml'
 
 type Asset = {
   id: string
@@ -130,7 +132,7 @@ export function TrackBuilder({
   const [chatMeetingUrl, setChatMeetingUrl] = useState(existingChat?.meetingUrl ?? '')
   const [chatMeetingLabel, setChatMeetingLabel] = useState(existingChat?.meetingCtaLabel ?? 'Book a meeting')
   const [chatThreshold, setChatThreshold] = useState<number>(existingChat?.meetingCtaThreshold ?? 3)
-  const [chatSystemPrompt, setChatSystemPrompt] = useState(existingChat?.systemPrompt ?? '')
+  const [chatSystemPrompt, setChatSystemPrompt] = useState(() => markdownToHtml(existingChat?.systemPrompt ?? ''))
 
   // ── Branding & CTA config ────────────────────────────────────────────────
   const existingBrand = initialTrack?.themeJson?.brand
@@ -868,14 +870,11 @@ export function TrackBuilder({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="chat-system-prompt">System prompt <span className="text-muted-foreground font-normal">(optional — overrides the assistant's default persona and conversation flow)</span></Label>
-                  <textarea
-                    id="chat-system-prompt"
-                    placeholder="You are a smart, consultative assistant on a B2B marketing platform website..."
+                  <Label>System prompt <span className="text-muted-foreground font-normal">(optional — overrides the assistant's default persona and conversation flow)</span></Label>
+                  <SystemPromptEditor
                     value={chatSystemPrompt}
-                    onChange={(e) => setChatSystemPrompt(e.target.value)}
-                    rows={8}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                    onChange={setChatSystemPrompt}
+                    placeholder="You are a smart, consultative assistant on a B2B marketing platform website..."
                   />
                   <p className="text-xs text-muted-foreground">
                     The assistant still only recommends real assets from this track and never invents titles, links, or stats. It automatically opens on its own once a visitor shows real engagement (3+ assets viewed, 90+ seconds on one asset, or 50%+ scroll on a document).
