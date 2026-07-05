@@ -433,14 +433,20 @@ function extractPhone(message: string): string | null {
 async function captureEmailFromMessage(
   trackId: string,
   sessionId: string,
-  message: string
+  message: string,
+  history: ChatTurn[]
 ): Promise<void> {
   const match = message.match(EMAIL_RE)
   if (!match) return
   const email = match[0].toLowerCase()
   // Visitor may give email and phone in the same message (e.g. when no
-  // meeting URL is configured and both are requested at once).
-  const phone = extractPhone(message)
+  // meeting URL is configured and both are requested at once) — or the
+  // phone may have come in an earlier turn, before any lead existed to
+  // attach it to. Check the current message first, then fall back to
+  // scanning prior user turns so an earlier phone-only message isn't lost.
+  const phone = extractPhone(message) ??
+    history.filter((t) => t.role === 'user').map((t) => extractPhone(t.content)).find(Boolean) ??
+    null
 
   const [row] = await db
     .select({ visitorId: sessions.visitorId, capturedEmail: visitors.capturedEmail })
@@ -646,7 +652,7 @@ export async function POST(req: Request) {
     if (!isKickoff) {
       // Soft lead capture — visitor volunteered an email, phone, or name conversationally
       if (sessionId) {
-        void captureEmailFromMessage(trackId, sessionId, message).catch((err) =>
+        void captureEmailFromMessage(trackId, sessionId, message, history).catch((err) =>
           console.error('[track-chat] email capture failed:', err)
         )
         void capturePhoneFromMessage(sessionId, message).catch((err) =>
