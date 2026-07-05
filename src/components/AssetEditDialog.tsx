@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, UploadCloud, X, FileText, Video, Link2, Image as ImageIcon } from 'lucide-react'
+import { Loader2, UploadCloud, X, FileText, Video, Link2, Image as ImageIcon, Wand2 } from 'lucide-react'
 import { deleteAsset, updateAsset } from '@/app/dashboard/assets/actions'
 import { createClient } from '@/lib/supabase/client'
 
@@ -66,6 +66,7 @@ export function AssetEditDialog({
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [generatingThumb, setGeneratingThumb] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const selectedTags = tagsText
@@ -80,6 +81,26 @@ export function AssetEditDialog({
   function addSuggestedTag(tag: string) {
     const next = [...selectedTags, tag]
     setTagsText(next.join(', '))
+  }
+
+  async function generateThumbnail() {
+    setGeneratingThumb(true)
+    setError(null)
+    try {
+      const tags = tagsText.split(',').map(t => t.trim()).filter(Boolean)
+      const res = await fetch('/api/generate-asset-thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assetId: asset.id, assetTitle: title.trim(), assetTags: tags }),
+      })
+      const data = await res.json().catch(() => ({})) as { url?: string; error?: string }
+      if (!res.ok || !data.url) throw new Error(data.error ?? 'Generation failed')
+      setThumbnailUrl(data.url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generation failed')
+    } finally {
+      setGeneratingThumb(false)
+    }
   }
 
   async function uploadImage(file: File) {
@@ -106,7 +127,7 @@ export function AssetEditDialog({
     onDrop: (files) => files[0] && uploadImage(files[0]),
     accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.gif'] },
     maxFiles: 1,
-    disabled: uploading || saving,
+    disabled: uploading || saving || generatingThumb,
   })
 
   async function handleSave() {
@@ -210,7 +231,7 @@ export function AssetEditDialog({
                 )}
               </div>
 
-              {thumbnailUrl && !uploading && (
+              {thumbnailUrl && !uploading && !generatingThumb && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setThumbnailUrl('') }}
                   className="absolute top-2 right-2 z-10 w-6 h-6 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80 transition-colors"
@@ -220,7 +241,19 @@ export function AssetEditDialog({
                 </button>
               )}
             </div>
+            <button
+              type="button"
+              onClick={generateThumbnail}
+              disabled={generatingThumb || uploading || saving}
+              className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              title="Generate a 1200×630 thumbnail using AI"
+            >
+              {generatingThumb
+                ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating…</>
+                : <><Wand2 className="h-3.5 w-3.5" /> Generate with AI</>}
+            </button>
           </div>
+          <p className="text-[11px] text-muted-foreground -mt-1">Drop/click to upload, or generate a 1200×630 thumbnail with AI using the title and tags below.</p>
 
           {/* Title */}
           <div className="space-y-2">
@@ -273,19 +306,19 @@ export function AssetEditDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={onClose} disabled={saving || uploading || deleting}>
+            <Button variant="outline" onClick={onClose} disabled={saving || uploading || deleting || generatingThumb}>
               Cancel
             </Button>
             <Button
               type="button"
               variant="destructive"
               onClick={handleDelete}
-              disabled={saving || uploading || deleting}
+              disabled={saving || uploading || deleting || generatingThumb}
             >
               {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Delete
             </Button>
-            <Button onClick={handleSave} disabled={saving || uploading || deleting || !title.trim()}>
+            <Button onClick={handleSave} disabled={saving || uploading || deleting || generatingThumb || !title.trim()}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save changes
             </Button>
