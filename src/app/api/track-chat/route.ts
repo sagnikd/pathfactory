@@ -449,7 +449,7 @@ async function captureEmailFromMessage(
     null
 
   const [row] = await db
-    .select({ visitorId: sessions.visitorId, capturedEmail: visitors.capturedEmail })
+    .select({ visitorId: sessions.visitorId, capturedEmail: visitors.capturedEmail, deviceJson: sessions.deviceJson })
     .from(sessions)
     .innerJoin(visitors, eq(sessions.visitorId, visitors.id))
     .where(eq(sessions.id, sessionId))
@@ -463,7 +463,15 @@ async function captureEmailFromMessage(
   const scoreMap = await computeLeadScores([row.visitorId])
   const score = scoreMap[row.visitorId]?.total ?? 0
 
-  const formFields = phone ? { email, phone, source: 'chat' } : { email, source: 'chat' }
+  // Reverse-IP geo already resolved for this session — carry it onto the
+  // lead the same way the gate form does when its country/city fields are
+  // enabled, so chat-captured leads aren't missing location context.
+  const device = (row.deviceJson as { country?: string; city?: string } | null) ?? {}
+  const formFields: Record<string, string> = { email, source: 'chat' }
+  if (phone) formFields.phone = phone
+  if (device.country) formFields.country = device.country
+  if (device.city) formFields.city = device.city
+
   const [lead] = await db.insert(leads).values({
     visitorId: row.visitorId,
     email,
