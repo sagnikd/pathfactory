@@ -67,6 +67,7 @@ export function AssetEditDialog({
   const [deleting, setDeleting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [generatingThumb, setGeneratingThumb] = useState(false)
+  const [extractingCover, setExtractingCover] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const selectedTags = tagsText
@@ -103,6 +104,40 @@ export function AssetEditDialog({
     }
   }
 
+  async function extractPdfCover() {
+    const pdfUrl = asset.fileUrl || asset.sourceUrl
+    if (!pdfUrl) return
+    setExtractingCover(true)
+    setError(null)
+    try {
+      // Fetch PDF bytes — use proxy for external URLs to bypass CORS
+      const fetchUrl = pdfUrl.includes('supabase.co')
+        ? pdfUrl
+        : `/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`
+      const res = await fetch(fetchUrl)
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+      const arrayBuffer = await res.arrayBuffer()
+
+      const pdfjsLib = await import('pdfjs-dist')
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+      const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+      const page = await pdf.getPage(1)
+      const viewport = page.getViewport({ scale: 2.0 })
+      const canvas = document.createElement('canvas')
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (page.render as any)({ canvasContext: canvas.getContext('2d')!, viewport }).promise
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+      if (!blob) throw new Error('Canvas export failed')
+      await uploadImage(new File([blob], 'cover.jpg', { type: 'image/jpeg' }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'PDF cover extraction failed')
+    } finally {
+      setExtractingCover(false)
+    }
+  }
+
   async function uploadImage(file: File) {
     setUploading(true)
     setError(null)
@@ -127,7 +162,7 @@ export function AssetEditDialog({
     onDrop: (files) => files[0] && uploadImage(files[0]),
     accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.gif'] },
     maxFiles: 1,
-    disabled: uploading || saving || generatingThumb,
+    disabled: uploading || saving || generatingThumb || extractingCover,
   })
 
   async function handleSave() {
@@ -241,19 +276,38 @@ export function AssetEditDialog({
                 </button>
               )}
             </div>
-            <button
-              type="button"
-              onClick={generateThumbnail}
-              disabled={generatingThumb || uploading || saving}
-              className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-              title="Generate a 1200×630 thumbnail using AI"
-            >
-              {generatingThumb
-                ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating…</>
-                : <><Wand2 className="h-3.5 w-3.5" /> Generate with AI</>}
-            </button>
+            <div className="mt-2 flex gap-2">
+              {(asset.type === 'pdf' || (asset.fileUrl || asset.sourceUrl || '')?.toLowerCase().includes('.pdf')) && (asset.fileUrl || asset.sourceUrl) && (
+                <button
+                  type="button"
+                  onClick={extractPdfCover}
+                  disabled={extractingCover || uploading || saving || generatingThumb}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-muted-foreground/40 bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/60 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  title="Render the first page of the PDF as thumbnail"
+                >
+                  {extractingCover
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Extracting…</>
+                    : <><FileText className="h-3.5 w-3.5" /> Use PDF cover</>}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={generateThumbnail}
+                disabled={generatingThumb || uploading || saving || extractingCover}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                title="Generate a 1200×630 thumbnail using AI"
+              >
+                {generatingThumb
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating…</>
+                  : <><Wand2 className="h-3.5 w-3.5" /> Generate with AI</>}
+              </button>
+            </div>
           </div>
-          <p className="text-[11px] text-muted-foreground -mt-1">Drop/click to upload, or generate a 1200×630 thumbnail with AI using the title and tags below.</p>
+          <p className="text-[11px] text-muted-foreground -mt-1">
+            {(asset.type === 'pdf' || (asset.fileUrl || asset.sourceUrl || '')?.toLowerCase().includes('.pdf'))
+              ? 'Drop/click to upload · Use PDF cover to extract page 1 · Generate with AI for a custom banner.'
+              : 'Drop/click to upload, or generate a 1200×630 thumbnail with AI using the title and tags below.'}
+          </p>
 
           {/* Title */}
           <div className="space-y-2">
@@ -306,19 +360,19 @@ export function AssetEditDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={onClose} disabled={saving || uploading || deleting || generatingThumb}>
+            <Button variant="outline" onClick={onClose} disabled={saving || uploading || deleting || generatingThumb || extractingCover}>
               Cancel
             </Button>
             <Button
               type="button"
               variant="destructive"
               onClick={handleDelete}
-              disabled={saving || uploading || deleting || generatingThumb}
+              disabled={saving || uploading || deleting || generatingThumb || extractingCover}
             >
               {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Delete
             </Button>
-            <Button onClick={handleSave} disabled={saving || uploading || deleting || generatingThumb || !title.trim()}>
+            <Button onClick={handleSave} disabled={saving || uploading || deleting || generatingThumb || extractingCover || !title.trim()}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save changes
             </Button>
