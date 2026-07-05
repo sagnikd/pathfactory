@@ -51,6 +51,7 @@ async function identifyVisitorFromUrl(
 type TrackTheme = {
   seoTitle?: string | null
   faviconUrl?: string | null
+  ogImageUrl?: string | null
 }
 
 // Visitor-facing name — falls back to the internal-only `title` until an
@@ -122,6 +123,17 @@ export async function generateMetadata({
     ogTitle = `${currentAsset.title} | ${resolveExternalTitle(track)}`
     ogImage = currentAsset.thumbnailUrl ?? undefined
     ogDescription = currentAsset.description ?? undefined
+  }
+
+  // Fall back to the track-level social image set in the builder
+  if (!ogImage && theme?.ogImageUrl) {
+    ogImage = theme.ogImageUrl
+  }
+
+  // LinkedIn and other crawlers require fully-qualified URLs
+  if (ogImage && ogImage.startsWith('/')) {
+    const base = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/+$/, '')
+    ogImage = `${base}${ogImage}`
   }
 
   return {

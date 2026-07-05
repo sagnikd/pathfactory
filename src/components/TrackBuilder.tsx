@@ -41,6 +41,7 @@ type TrackData = {
   gateConfigJson?: GateConfig | null
   themeJson?: ({
     seoTitle?: string
+    ogImageUrl?: string
     chat?: {
       enabled?: boolean
       assistantName?: string
@@ -101,6 +102,7 @@ export function TrackBuilder({
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [importedAssets, setImportedAssets] = useState<Asset[]>([])
   const [seoTitle, setSeoTitle] = useState(initialTrack?.themeJson?.seoTitle ?? '')
+  const [ogImageUrl, setOgImageUrl] = useState(initialTrack?.themeJson?.ogImageUrl ?? '')
   const [isPending, startTransition] = useTransition()
 
   // ── Chat assistant config ────────────────────────────────────────────────
@@ -258,6 +260,7 @@ export function TrackBuilder({
       // Preserve any existing themeJson fields (leadScoring, experience config, etc.)
       ...(initialTrack?.themeJson ?? {}),
       seoTitle: seoTitle.trim() || null,
+      ogImageUrl: ogImageUrl.trim() || null,
       chat: {
         enabled: chatEnabled,
         assistantName: chatName.trim() || 'AI Assistant',
@@ -360,8 +363,8 @@ export function TrackBuilder({
       {/* SEO */}
       <div className="rounded-xl border bg-card p-5 space-y-4">
         <div>
-          <h2 className="font-semibold text-sm">SEO</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Customize browser tab title for this public track</p>
+          <h2 className="font-semibold text-sm">SEO & Social</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Customize browser tab title and social preview image (LinkedIn, Slack, etc.)</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
@@ -372,6 +375,16 @@ export function TrackBuilder({
               value={seoTitle}
               onChange={(e) => setSeoTitle(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="og-image">Social preview image URL</Label>
+            <Input
+              id="og-image"
+              placeholder="https://your-cdn.com/track-banner.png"
+              value={ogImageUrl}
+              onChange={(e) => setOgImageUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">1200×630px recommended. Shown when sharing on LinkedIn, Slack, etc.</p>
           </div>
         </div>
       </div>
