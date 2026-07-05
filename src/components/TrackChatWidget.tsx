@@ -203,13 +203,11 @@ export function TrackChatWidget({
   useEffect(() => {
     if (prevAssetIdRef.current === currentAssetId) return
     prevAssetIdRef.current = currentAssetId
-    setMessages(greeting ? [greeting] : [])
-    setAskedQuestions([])
-    setAskedCount(0)
+    // Keep messages, askedQuestions, askedCount, showMeetingCta — visitor
+    // already answered qualification; wiping on asset nav re-triggers those
+    // questions on every content switch.
     setInputValue('')
     setIsLoading(false)
-    setSuggestedQuestions(chatConfig.suggestedQuestions ?? [])
-    setShowMeetingCta(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAssetId])
 

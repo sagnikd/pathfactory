@@ -10,8 +10,10 @@ import { clientGeoLookup } from '@/lib/geoLookup'
 
 export type LeadField = {
   name: string
-  label: string
-  type: 'email' | 'text' | 'tel'
+  label: string           // for 'consent' type: may contain HTML (links etc.)
+  type: 'email' | 'text' | 'tel' | 'select' | 'consent'
+  options?: string[]      // for 'select' type
+  descriptionHtml?: string // for 'consent' type: paragraph shown below checkbox
   enabled: boolean
   required: boolean
 }
@@ -125,6 +127,32 @@ function FieldInput({
   autoFilled: boolean
   onChange: (val: string) => void
 }) {
+  if (field.type === 'consent') {
+    return (
+      <div className="space-y-1">
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            required
+            checked={value === 'agreed'}
+            onChange={e => onChange(e.target.checked ? 'agreed' : '')}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+          />
+          <span
+            className="text-sm font-medium leading-snug [&_a]:text-primary [&_a]:hover:underline"
+            dangerouslySetInnerHTML={{ __html: `<span class="text-destructive mr-0.5">*</span>${field.label}` }}
+          />
+        </label>
+        {field.descriptionHtml && (
+          <p
+            className="ml-6 text-xs text-primary leading-relaxed [&_a]:underline"
+            dangerouslySetInnerHTML={{ __html: field.descriptionHtml }}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
@@ -139,15 +167,30 @@ function FieldInput({
           </span>
         )}
       </div>
-      <Input
-        id={field.name}
-        type={field.type}
-        required={field.required}
-        placeholder={field.type === 'email' ? 'you@company.com' : ''}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className={autoFilled ? 'border-primary/40 bg-primary/5' : ''}
-      />
+      {field.type === 'select' && field.options?.length ? (
+        <select
+          id={field.name}
+          required={field.required}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className={`w-full h-10 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 ${autoFilled ? 'border-primary/40 bg-primary/5' : 'border-input'}`}
+        >
+          <option value="">Select…</option>
+          {field.options.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      ) : (
+        <Input
+          id={field.name}
+          type={field.type}
+          required={field.required}
+          placeholder={field.type === 'email' ? 'you@company.com' : ''}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className={autoFilled ? 'border-primary/40 bg-primary/5' : ''}
+        />
+      )}
     </div>
   )
 }
@@ -352,10 +395,17 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
     setLoading(true)
     setError(null)
     try {
+      // visitorId comes from SSR but on a first-ever request the middleware
+      // sets the cookie on the response (not the request), so the server
+      // can't read it back. By submit time the browser has the cookie, so
+      // fall back to reading it client-side.
+      const effectiveVisitorId = visitorId
+        ?? document.cookie.split('; ').find(c => c.startsWith('visitorId='))?.split('=')[1]
+        ?? null
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trackId, visitorId, fields: values }),
+        body: JSON.stringify({ trackId, visitorId: effectiveVisitorId, fields: values }),
       })
       if (res.ok) {
         localStorage.setItem(`unlocked_${trackId}`, 'true')
@@ -399,7 +449,7 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
           key={renderKey}
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px]"
         >
-          <Card className="w-full max-w-md shadow-2xl">
+          <Card className="w-full max-w-lg shadow-2xl">
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-2">
                 <div>

@@ -96,7 +96,7 @@ export default function TrackViewer({
   // free — force the gate form if one's configured, or fall back to asking
   // for an email via chat, rather than either handing it over or hiding the
   // download affordance entirely.
-  const [downloadGateToken, setDownloadGateToken] = useState(0)
+  const [gateForceToken, setGateForceToken] = useState(0)
   const [downloadChatToken, setDownloadChatToken] = useState(0)
   // No form-based gate exists to track "already asked" — nudge via chat once
   // per page load rather than either blocking forever or re-asking every click.
@@ -105,7 +105,7 @@ export default function TrackViewer({
     if (gateConfig?.enabled) {
       if (gateCleared) return
       e.preventDefault()
-      setDownloadGateToken((t) => t + 1)
+      setGateForceToken((t) => t + 1)
       return
     }
     if (chatConfig.enabled && !downloadChatAskedRef.current) {
@@ -157,7 +157,7 @@ export default function TrackViewer({
   const brand = (track.themeJson as {
     brand?: {
       logoUrl?: string
-      cta?: { enabled?: boolean; label?: string; action?: 'link' | 'chat'; url?: string; chatMessage?: string }
+      cta?: { enabled?: boolean; label?: string; action?: 'link' | 'chat' | 'gate'; url?: string; chatMessage?: string }
     }
   } | null)?.brand ?? null
   const brandCta = brand?.cta?.enabled ? brand.cta : null
@@ -262,6 +262,7 @@ export default function TrackViewer({
       trackEvent({ sessionId, assetId: currentAsset.id, eventType: 'cta_click' })
     }
     if (brandCta.action === 'chat') handleCtaChat()
+    else if (brandCta.action === 'gate') setGateForceToken(t => t + 1)
     else if (brandCta.url) window.open(brandCta.url, '_blank', 'noopener,noreferrer')
   }
 
@@ -444,7 +445,7 @@ export default function TrackViewer({
               bypassGate={isKnownVisitor}
               onUnlock={() => setGateCleared(true)}
               onSubmit={fields => setSubmittedFields(fields)}
-              forceShowToken={downloadGateToken}
+              forceShowToken={gateForceToken}
             >
               <AssetViewer
                 key={currentAsset.id}
@@ -467,6 +468,7 @@ export default function TrackViewer({
             bypassGate={isKnownVisitor}
             onUnlock={() => setGateCleared(true)}
             onSubmit={fields => setSubmittedFields(fields)}
+            forceShowToken={gateForceToken}
           >
             <AssetViewer
               key={currentAsset.id}

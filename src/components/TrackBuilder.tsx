@@ -19,6 +19,7 @@ import {
 import { createTrack, updateTrack } from '@/app/dashboard/tracks/actions'
 import type { LeadField, GateConfig } from '@/components/GateOverlay'
 import { AssetUploadDialog } from '@/components/AssetUploadDialog'
+import { RichLinkInput } from '@/components/RichLinkInput'
 
 type Asset = {
   id: string
@@ -55,7 +56,7 @@ type TrackData = {
       cta?: {
         enabled?: boolean
         label?: string
-        action?: 'link' | 'chat'
+        action?: 'link' | 'chat' | 'gate'
         url?: string
         chatMessage?: string
       }
@@ -72,6 +73,22 @@ const DEFAULT_LEAD_FIELDS: LeadField[] = [
   { name: 'phone',     label: 'Phone',       type: 'tel',   enabled: false, required: false },
   { name: 'country',   label: 'Country',     type: 'text',  enabled: false, required: false },
   { name: 'city',      label: 'City',        type: 'text',  enabled: false, required: false },
+  {
+    name: 'consent_federal_govt',
+    type: 'consent',
+    label: 'I am not a US Federal Govt. employee or agency, nor am I submitting in behalf of one.',
+    descriptionHtml: 'HCLSoftware provides software and services to the U.S. Federal Government through a dedicated team. You can learn more and reach the team <a href="https://www.hcl-software.com/about/government" target="_blank" rel="noopener noreferrer">here</a>.',
+    enabled: true,
+    required: true,
+  },
+  {
+    name: 'consent_privacy',
+    type: 'consent',
+    label: 'I agree to HCL\'s <a href="https://www.hcl-software.com/legal/privacy" target="_blank" rel="noopener noreferrer">Privacy Statement</a>.',
+    descriptionHtml: 'HCL is collecting this information for its legitimate interests and you acknowledge that we may contact you about products or services that could be of interest to you. You may unsubscribe from our emails at any time.',
+    enabled: true,
+    required: true,
+  },
 ]
 
 // Names that belong to the built-in set — can be toggled but not deleted
@@ -121,7 +138,7 @@ export function TrackBuilder({
   const [logoUrl, setLogoUrl] = useState(existingBrand?.logoUrl ?? '')
   const [ctaEnabled, setCtaEnabled] = useState<boolean>(existingBrand?.cta?.enabled ?? false)
   const [ctaLabel, setCtaLabel] = useState(existingBrand?.cta?.label ?? "Let's talk")
-  const [ctaAction, setCtaAction] = useState<'link' | 'chat'>(existingBrand?.cta?.action ?? 'link')
+  const [ctaAction, setCtaAction] = useState<'link' | 'chat' | 'gate'>(existingBrand?.cta?.action ?? 'link')
   const [ctaUrl, setCtaUrl] = useState(existingBrand?.cta?.url ?? '')
   const [ctaChatMessage, setCtaChatMessage] = useState(
     existingBrand?.cta?.chatMessage ?? 'Sure, let me set up a meeting with our sales team.'
@@ -149,8 +166,10 @@ export function TrackBuilder({
     return [...saved, ...newBuiltins]
   })
 
-  const [newFieldLabel, setNewFieldLabel] = useState('')
-  const [newFieldType,  setNewFieldType]  = useState<LeadField['type']>('text')
+  const [newFieldLabel,       setNewFieldLabel]       = useState('')
+  const [newFieldType,        setNewFieldType]        = useState<LeadField['type']>('text')
+  const [newFieldOptions,     setNewFieldOptions]     = useState('')
+  const [newFieldDescription, setNewFieldDescription] = useState('')
 
   function toggleField(name: string, key: 'enabled' | 'required') {
     setLcFields(prev => prev.map(f => {
@@ -167,9 +186,15 @@ export function TrackBuilder({
     // Generate a stable unique key from the label
     const base = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
     const name = base + '_' + Math.random().toString(36).slice(2, 6)
-    setLcFields(prev => [...prev, { name, label, type: newFieldType, enabled: true, required: false }])
+    const options = newFieldType === 'select'
+      ? newFieldOptions.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined
+    const descriptionHtml = newFieldType === 'consent' ? newFieldDescription.trim() || undefined : undefined
+    setLcFields(prev => [...prev, { name, label, type: newFieldType, options, descriptionHtml, enabled: true, required: newFieldType === 'consent' }])
     setNewFieldLabel('')
     setNewFieldType('text')
+    setNewFieldOptions('')
+    setNewFieldDescription('')
   }
 
   function removeField(name: string) {
@@ -652,42 +677,51 @@ export function TrackBuilder({
                           className="grid grid-cols-[1fr_72px_72px_32px] items-center px-4 py-2.5 border-t"
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-sm truncate">{field.label}</span>
+                            <span className="text-sm truncate">
+                              {field.type === 'consent'
+                                ? <span className="italic text-muted-foreground">{field.label.replace(/<[^>]+>/g, '').slice(0, 50)}{field.label.length > 50 ? '…' : ''}</span>
+                                : field.label}
+                            </span>
+                            {field.type === 'consent' && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 shrink-0">consent</span>
+                            )}
                             {isAutoDetect && (
-                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
-                                auto
-                              </span>
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">auto</span>
                             )}
                           </div>
 
-                          {/* Show toggle */}
+                          {/* Show toggle — hidden for consent (always shown) */}
                           <div className="flex justify-center">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={field.enabled}
-                              disabled={field.name === 'email'}
-                              onClick={() => toggleField(field.name, 'enabled')}
-                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${field.enabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-                              title={field.name === 'email' ? 'Email is always shown' : undefined}
-                            >
-                              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${field.enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-                            </button>
+                            {field.type !== 'consent' && (
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={field.enabled}
+                                disabled={field.name === 'email'}
+                                onClick={() => toggleField(field.name, 'enabled')}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${field.enabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                                title={field.name === 'email' ? 'Email is always shown' : undefined}
+                              >
+                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${field.enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                              </button>
+                            )}
                           </div>
 
-                          {/* Required toggle */}
+                          {/* Required toggle — hidden for consent (always required) */}
                           <div className="flex justify-center">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={field.required}
-                              disabled={field.name === 'email' || !field.enabled}
-                              onClick={() => toggleField(field.name, 'required')}
-                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${field.required ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-                              title={!field.enabled ? 'Enable field first' : undefined}
-                            >
-                              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${field.required ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-                            </button>
+                            {field.type !== 'consent' && (
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={field.required}
+                                disabled={field.name === 'email' || !field.enabled}
+                                onClick={() => toggleField(field.name, 'required')}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${field.required ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                                title={!field.enabled ? 'Enable field first' : undefined}
+                              >
+                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${field.required ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                              </button>
+                            )}
                           </div>
 
                           {/* Delete — only for custom fields */}
@@ -708,38 +742,71 @@ export function TrackBuilder({
                     })}
 
                     {/* Add custom field row */}
-                    <div className="border-t px-4 py-3 bg-muted/20">
-                      <p className="text-xs font-medium text-muted-foreground mb-2">Add custom field</p>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          placeholder="Field label, e.g. Team size"
-                          value={newFieldLabel}
-                          onChange={e => setNewFieldLabel(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomField())}
-                          className="h-8 text-sm flex-1"
-                        />
+                    <div className="border-t px-4 py-3 bg-muted/20 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Add custom field</p>
+                      <div className="flex items-start gap-2">
+                        {newFieldType === 'consent' ? (
+                          <RichLinkInput
+                            value={newFieldLabel}
+                            onChange={setNewFieldLabel}
+                            placeholder="Paste checkbox label — links are preserved"
+                            rows={2}
+                            className="flex-1 text-sm"
+                          />
+                        ) : (
+                          <Input
+                            placeholder="Field label, e.g. Industry"
+                            value={newFieldLabel}
+                            onChange={e => setNewFieldLabel(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomField())}
+                            className="h-8 text-sm flex-1"
+                          />
+                        )}
                         <select
                           value={newFieldType}
-                          onChange={e => setNewFieldType(e.target.value as LeadField['type'])}
-                          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          onChange={e => { setNewFieldType(e.target.value as LeadField['type']); setNewFieldOptions(''); setNewFieldDescription('') }}
+                          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 shrink-0"
                         >
                           <option value="text">Text</option>
                           <option value="email">Email</option>
                           <option value="tel">Phone</option>
+                          <option value="select">Dropdown</option>
+                          <option value="consent">Consent</option>
                         </select>
                         <button
                           type="button"
                           onClick={addCustomField}
-                          disabled={!newFieldLabel.trim()}
+                          disabled={!newFieldLabel.trim() || (newFieldType === 'select' && !newFieldOptions.trim())}
                           className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1 disabled:opacity-40 shrink-0"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           Add
                         </button>
                       </div>
+                      {newFieldType === 'select' && (
+                        <Input
+                          placeholder="Options, comma-separated: Insurance, Technology, Healthcare, Finance"
+                          value={newFieldOptions}
+                          onChange={e => setNewFieldOptions(e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                      )}
+                      {newFieldType === 'consent' && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Description shown below checkbox (optional) — paste rich text with links:</p>
+                          <RichLinkInput
+                            value={newFieldDescription}
+                            onChange={setNewFieldDescription}
+                            placeholder="HCLSoftware provides software to the U.S. Federal Government. Learn more here."
+                            rows={2}
+                            className="text-sm"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
+
               </>
             )}
           </div>
@@ -957,12 +1024,17 @@ export function TrackBuilder({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="link">Open a link</SelectItem>
-                      <SelectItem value="chat">Open chat assistant</SelectItem>
+                      <SelectItem value="chat" disabled={!chatEnabled}>
+                        Open chat assistant{!chatEnabled ? ' (enable chat above)' : ''}
+                      </SelectItem>
+                      <SelectItem value="gate" disabled={!lcEnabled}>
+                        Open lead capture form{!lcEnabled ? ' (enable gate above)' : ''}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {ctaAction === 'link' ? (
+                {ctaAction === 'link' && (
                   <div className="space-y-1.5">
                     <Label htmlFor="cta-url">Destination URL</Label>
                     <Input
@@ -972,7 +1044,8 @@ export function TrackBuilder({
                       onChange={(e) => setCtaUrl(e.target.value)}
                     />
                   </div>
-                ) : (
+                )}
+                {ctaAction === 'chat' && (
                   <div className="space-y-1.5">
                     <Label htmlFor="cta-chat-message">Assistant&apos;s opening message</Label>
                     <Input
@@ -982,9 +1055,14 @@ export function TrackBuilder({
                       onChange={(e) => setCtaChatMessage(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Opens the chat widget and shows this message immediately, plus the meeting-booking button if a meeting URL is configured above.
+                      Opens the chat widget and shows this message immediately.
                     </p>
                   </div>
+                )}
+                {ctaAction === 'gate' && (
+                  <p className="text-xs text-muted-foreground">
+                    Opens the lead capture form configured in the Gate section above.
+                  </p>
                 )}
               </>
             )}
