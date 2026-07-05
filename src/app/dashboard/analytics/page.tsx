@@ -1,5 +1,5 @@
 import { db } from '@/db'
-import { engagements, sessions, visitors, assets } from '@/db/schema'
+import { engagements, sessions, visitors, assets, companyAliases } from '@/db/schema'
 import { eq, count, sql, desc, inArray, and, gte, lte } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AnalyticsCharts from './AnalyticsCharts'
@@ -32,10 +32,15 @@ function coSimilarity(a: string, b: string): number {
   return shorter.filter(t => longerSet.has(t)).length / shorter.length
 }
 
-type AccountRaw = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
+type AccountSqlRow = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
+type AccountRaw = AccountSqlRow & { rawCompany: string }
+type AccountMerged = AccountSqlRow & { companies: string[] }
 
-/** Cluster rows with similar company names, canonical = heaviest by dwell_secs */
-function mergeAccounts(rows: AccountRaw[], threshold = 0.75): AccountRaw[] {
+/** Cluster rows with similar company names, canonical = heaviest by dwell_secs.
+ *  `companies` on the result carries every RAW (pre-alias-rename) name folded
+ *  into that cluster — that's what's actually stored on visitors/leads in the
+ *  DB, so callers must query leads by rawCompany, not the display `company`. */
+function mergeAccounts(rows: AccountRaw[], threshold = 0.75): AccountMerged[] {
   const clusters: AccountRaw[][] = []
 
   for (const row of rows) {
@@ -51,6 +56,7 @@ function mergeAccounts(rows: AccountRaw[], threshold = 0.75): AccountRaw[] {
     const canonical = cluster.reduce((best, r) => r.dwell_secs > best.dwell_secs ? r : best)
     return {
       company:        canonical.company,
+      companies:      cluster.map(r => r.rawCompany),
       contacts:       cluster.reduce((s, r) => s + r.contacts,       0),
       views:          cluster.reduce((s, r) => s + r.views,          0),
       sessions_count: cluster.reduce((s, r) => s + r.sessions_count, 0),
@@ -231,7 +237,7 @@ export default async function AnalyticsDashboard({
   // ── 5. Top accounts — merged lead-form company + IP geo ──────────────────
   // Priority: lead form 'company' field > IP geo company on the session.
   // Contacts = distinct captured emails from that company.
-  const accountsRes = await db.execute<AccountRaw>(sql`
+  const accountsRes = await db.execute<AccountSqlRow>(sql`
     WITH visitor_company AS (
       -- Per visitor: prefer the company they wrote in the lead form,
       -- fall back to whatever IP geo resolved for any of their sessions.
@@ -264,9 +270,37 @@ export default async function AnalyticsDashboard({
     ORDER BY contacts DESC, dwell_secs DESC
     LIMIT 50
   `)
-  const topAccounts = mergeAccounts(Array.from(accountsRes) as AccountRaw[])
+  const rawAccountRows = Array.from(accountsRes) as AccountSqlRow[]
+
+  // Manual overrides for company names automatic fuzzy matching doesn't catch
+  // (e.g. "HCLTech" has zero token overlap with "HCL Technologies"). Applied
+  // before fuzzy merge so aliased rows collapse into the same cluster. Keep
+  // rawCompany = the untouched DB value — getAccountLeads must filter by that,
+  // not the renamed display `company`, since that's what's actually stored on
+  // visitors/leads.
+  const aliases = await db.select({
+    id: companyAliases.id,
+    aliasName: companyAliases.aliasName,
+    canonicalName: companyAliases.canonicalName,
+  }).from(companyAliases).where(eq(companyAliases.organizationId, orgId))
+
+  const aliasMap = new Map(aliases.map(a => [a.aliasName.toLowerCase(), a.canonicalName]))
+  const aliasedRows: AccountRaw[] = rawAccountRows.map(r => ({
+    ...r,
+    rawCompany: r.company,
+    company: aliasMap.get(r.company.toLowerCase()) ?? r.company,
+  }))
+
+  const topAccounts = mergeAccounts(aliasedRows)
     .sort((a, b) => b.contacts - a.contacts || b.dwell_secs - a.dwell_secs)
     .slice(0, 20)
+
+  // Distinct raw company names, for the "merge accounts" picker — the alias
+  // target itself should always be selectable even after being applied once.
+  const allCompanyNames = [...new Set([
+    ...rawAccountRows.map(r => r.company),
+    ...aliases.map(a => a.canonicalName),
+  ])].sort((a, b) => a.localeCompare(b))
 
   // ── 6. Top visitors ───────────────────────────────────────────────────────
   type VisitorRow = { visitor_id: string; identifier: string; views: number; sessions_count: number; dwell_secs: number }
@@ -456,6 +490,10 @@ export default async function AnalyticsDashboard({
         accounts={topAccounts}
         dwell={topByDwell}
         binge={topByBinge}
+        dateFromSql={dateFromSql}
+        dateToSql={dateToSql}
+        allCompanyNames={allCompanyNames}
+        aliases={aliases}
       />
 
       {/* Row 4: Funnel + Top Performing Assets (existing) */}

@@ -241,6 +241,17 @@ export const abmAlerts = pgTable("abm_alerts", {
   sentAt: timestamp("sent_at").defaultNow().notNull(),
 });
 
+// Manual company-name aliases for the Top Accounts table — e.g. mapping
+// "HCLTech" onto canonical "HCL Technologies" when automatic fuzzy matching
+// (token-similarity) doesn't catch it. aliasName is looked up case-insensitively.
+export const companyAliases = pgTable("company_aliases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  aliasName: text("alias_name").notNull(),
+  canonicalName: text("canonical_name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Pending signups — users who created a Supabase auth account but haven't been
 // provisioned with an organisation yet (awaiting super-admin approval).
 export const pendingSignups = pgTable("pending_signups", {

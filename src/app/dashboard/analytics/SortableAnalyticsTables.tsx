@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronsUpDown, Download, Loader2 } from 'lucide-react'
+import { getAccountLeads, type AccountLeadRow } from './actions'
+import { CompanyAliasManager, type CompanyAlias } from './CompanyAliasManager'
 
 // ── Types (mirror page.tsx) ───────────────────────────────────────────────────
 export type VisitorRow      = { visitor_id: string; identifier: string; views: number; sessions_count: number; dwell_secs: number }
-export type AccountRow      = { company: string; contacts: number; views: number; sessions_count: number; dwell_secs: number }
+export type AccountRow      = { company: string; companies: string[]; contacts: number; views: number; sessions_count: number; dwell_secs: number }
 export type DwellRow        = { asset_id: string; title: string; dwell_secs: number; views: number }
 export type BingeRow        = { asset_id: string; title: string; total_sessions: number; binge_sessions: number; binge_rate: number }
 export type TrackStatRow    = { track_id: string; title: string; slug: string; layout: string; sessions_count: number; unique_visitors: number; total_dwell_secs: number; views: number }
@@ -99,9 +101,80 @@ export function TopVisitorsTable({ rows }: { rows: VisitorRow[] }) {
   )
 }
 
+// ── CSV helpers (mirrors LeadClientList's downloadCSV) ────────────────────────
+function csvCell(val: unknown): string {
+  const str = String(val ?? '')
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`
+  }
+  return str
+}
+
+const LEAD_FIELD_LABELS: Record<string, string> = {
+  email: 'Email', firstName: 'First Name', lastName: 'Last Name', company: 'Company',
+  jobTitle: 'Job Title', phone: 'Phone', country: 'Country', city: 'City',
+}
+const LEAD_FIELD_ORDER = ['email', 'firstName', 'lastName', 'company', 'jobTitle', 'phone', 'country', 'city']
+
+function downloadAccountLeadsCsv(accountName: string, rows: AccountLeadRow[]) {
+  const allKeys = new Set<string>()
+  rows.forEach(r => Object.keys(r.formResponsesJson ?? {}).forEach(k => allKeys.add(k)))
+  const orderedKeys = [
+    ...LEAD_FIELD_ORDER.filter(k => allKeys.has(k)),
+    ...[...allKeys].filter(k => !LEAD_FIELD_ORDER.includes(k)),
+  ]
+
+  const headers = [
+    ...orderedKeys.map(k => LEAD_FIELD_LABELS[k] || k),
+    'Score', 'Views', 'Sessions', 'View Time', 'Captured At',
+  ]
+  const csvRows = rows.map(r => {
+    const fields = (r.formResponsesJson as Record<string, string>) ?? {}
+    return [
+      ...orderedKeys.map(k => csvCell(fields[k] ?? '')),
+      csvCell(r.score),
+      csvCell(r.views),
+      csvCell(r.sessionsCount),
+      csvCell(fmtHMS(r.dwellSecs)),
+      csvCell(new Date(r.createdAt).toISOString()),
+    ]
+  })
+
+  const csv = [headers.map(csvCell).join(','), ...csvRows.map(r => r.join(','))].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${accountName.replace(/[^a-z0-9]+/gi, '-')}-leads-${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 // ── Top Accounts ──────────────────────────────────────────────────────────────
-export function TopAccountsTable({ rows }: { rows: AccountRow[] }) {
+export function TopAccountsTable({ rows, dateFromSql, dateToSql }: {
+  rows: AccountRow[]
+  dateFromSql?: string | null
+  dateToSql?: string | null
+}) {
   const { sorted, sortCol, sortDir, toggle } = useSortedRows(rows, 'contacts')
+  const [pendingCompany, setPendingCompany] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+
+  function handleExport(row: AccountRow) {
+    if (row.contacts === 0 || isPending) return
+    setPendingCompany(row.company)
+    startTransition(async () => {
+      try {
+        const leads = await getAccountLeads(row.companies, dateFromSql ?? null, dateToSql ?? null)
+        downloadAccountLeadsCsv(row.company, leads)
+      } finally {
+        setPendingCompany(null)
+      }
+    })
+  }
+
   if (!rows.length) return <p className="text-sm text-muted-foreground px-4 py-6">No company data yet — fill the lead form to populate this.</p>
   return (
     <table className="w-full">
@@ -122,9 +195,20 @@ export function TopAccountsTable({ rows }: { rows: AccountRow[] }) {
               {a.company}
             </td>
             <td className={`${tdBase} text-right tabular-nums`}>
-              {a.contacts > 0
-                ? <span className="inline-flex items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold px-2 py-0.5 min-w-[1.5rem]">{a.contacts}</span>
-                : <span className="text-muted-foreground">—</span>}
+              {a.contacts > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => handleExport(a)}
+                  disabled={isPending}
+                  title="Download leads for this account"
+                  className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-xs font-semibold px-2 py-0.5 min-w-[1.5rem] hover:bg-primary/20 transition-colors disabled:opacity-60"
+                >
+                  {pendingCompany === a.company
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : <Download className="w-3 h-3" />}
+                  {a.contacts}
+                </button>
+              ) : <span className="text-muted-foreground">—</span>}
             </td>
             <td className={`${tdBase} text-right tabular-nums`}>{a.views}</td>
             <td className={`${tdBase} text-right tabular-nums`}>{a.sessions_count}</td>
@@ -282,11 +366,15 @@ export function ExperienceStatsTable({ rows }: { rows: ExperienceStatRow[] }) {
 }
 
 // ── Combined export (one import in page.tsx) ──────────────────────────────────
-export function AnalyticsTables({ visitors, accounts, dwell, binge }: {
+export function AnalyticsTables({ visitors, accounts, dwell, binge, dateFromSql, dateToSql, allCompanyNames, aliases }: {
   visitors: VisitorRow[]
   accounts: AccountRow[]
   dwell:    DwellRow[]
   binge:    BingeRow[]
+  dateFromSql?: string | null
+  dateToSql?: string | null
+  allCompanyNames: string[]
+  aliases: CompanyAlias[]
 }) {
   return (
     <>
@@ -302,12 +390,15 @@ export function AnalyticsTables({ visitors, accounts, dwell, binge }: {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top Accounts</CardTitle>
-            <p className="text-xs text-muted-foreground">Lead form + IP geo · contacts = captured emails · click to sort</p>
+          <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">Top Accounts</CardTitle>
+              <p className="text-xs text-muted-foreground">Lead form + IP geo · contacts = captured emails, click to download leads · click headers to sort</p>
+            </div>
+            <CompanyAliasManager allCompanyNames={allCompanyNames} aliases={aliases} />
           </CardHeader>
           <CardContent className="p-0">
-            <TopAccountsTable rows={accounts} />
+            <TopAccountsTable rows={accounts} dateFromSql={dateFromSql} dateToSql={dateToSql} />
           </CardContent>
         </Card>
       </div>
