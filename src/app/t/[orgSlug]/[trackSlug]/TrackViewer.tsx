@@ -267,6 +267,13 @@ export default function TrackViewer({
     if (currentAssetIndex > 0) setCurrentAssetIndex(prev => prev - 1)
   }
 
+  // Chat recommends assets via an in-session reference token instead of a raw
+  // URL — switch the visitor to that asset without a page load.
+  const handleNavigateToAsset = (assetId: string) => {
+    const idx = assets.findIndex((a) => a.id === assetId)
+    if (idx >= 0) setCurrentAssetIndex(idx)
+  }
+
   const prevAsset = currentAssetIndex > 0 ? assets[currentAssetIndex - 1] : null
   const nextAsset = currentAssetIndex < assets.length - 1 ? assets[currentAssetIndex + 1] : null
   const assetThumb = (asset: typeof currentAsset) => asset?.thumbnailUrl || asset?.fileUrl || asset?.sourceUrl || null
@@ -534,6 +541,7 @@ export default function TrackViewer({
         proactiveToken={proactiveToken}
         proactiveAssetTitle={currentAsset?.displayTitle ?? currentAsset?.title}
         downloadChatToken={downloadChatToken}
+        onNavigateToAsset={handleNavigateToAsset}
       />
     </div>
   )

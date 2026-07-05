@@ -418,6 +418,7 @@ async function persistChatTurn(
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
 const PLAUSIBLE_NAME_RE = /^[a-zA-Z][a-zA-Z' -]{0,39}$/
+const SALES_INTENT_RE = /\b(talk|speak|chat|connect)\s+(to|with)\s+(sales|someone|a\s+human|a\s+rep|an?\s+agent)\b|\bbook\s+a\s+(meeting|call|demo)\b|\bschedule\s+a\s+(call|meeting|demo)\b|\bcontact\s+sales\b/i
 
 async function captureEmailFromMessage(
   trackId: string,
@@ -608,9 +609,13 @@ export async function POST(req: Request) {
       }
     }
 
+    // Explicit sales intent should surface the meeting card immediately,
+    // regardless of how many questions have been asked so far — a visitor
+    // who says "I want to talk to sales" shouldn't have to keep chatting
+    // until they cross a question-count threshold.
     const showMeetingCta = Boolean(
       chatConfig.meetingUrl &&
-      (askedQuestions.length ?? 0) >= chatConfig.meetingCtaThreshold
+      ((askedQuestions.length ?? 0) >= chatConfig.meetingCtaThreshold || (!isKickoff && SALES_INTENT_RE.test(message)))
     )
 
     return NextResponse.json({

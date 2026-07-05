@@ -337,8 +337,13 @@ export function isTrackGated(themeJson: unknown): boolean {
 // 3. buildSystemPrompt
 // ---------------------------------------------------------------------------
 
+// Assets are referenced with a stable [[asset:<id>:<title>]] token instead of
+// a raw URL. The client renders this as an in-session link that switches the
+// visitor to that asset without leaving the track or exposing a backend/CDN
+// URL. See TrackChatWidget's message renderer for the client-side half.
 function assetLine(asset: Asset, index: number, pdfText?: string): string {
-  const parts: string[] = [`${index + 1}. "${asset.displayTitle ?? asset.title}" [${asset.type}]`]
+  const title = asset.displayTitle ?? asset.title
+  const parts: string[] = [`${index + 1}. "${title}" [${asset.type}] — reference token: [[asset:${asset.id}:${title}]]`]
   if (asset.description) {
     parts.push(`   Description: ${asset.description.slice(0, 300)}`)
   }
@@ -349,10 +354,6 @@ function assetLine(asset: Asset, index: number, pdfText?: string): string {
   if (pdfText) {
     parts.push(`   Content (extracted text / video transcript):\n${pdfText.slice(0, 4000)}`)
   }
-  const url = asset.sourceUrl ?? asset.fileUrl
-  if (url) {
-    parts.push(`   URL: ${url.slice(0, 220)}`)
-  }
   return parts.join('\n')
 }
 
@@ -361,9 +362,20 @@ const JSON_OUTPUT_INSTRUCTIONS = [
   'OUTPUT FORMAT — always respond with a single JSON object and nothing else:',
   '{"answer": "your reply text shown to the visitor", "suggestedQuestions": ["short clickable option 1", "short clickable option 2", ...]}',
   '- "answer" is required plain text (no markdown).',
+  '- The full question you are asking the visitor must always be written out in "answer" — never rely on "suggestedQuestions" alone to convey what you are asking; it only supplies clickable shortcuts for a question already stated in "answer".',
   '- "suggestedQuestions" is optional. Use it ONLY for a closed set of valid, clickable answers to a multiple-choice question you just asked (e.g. a list of industries or roles) — each entry must be a complete answer someone could click as-is.',
   '- Never use "suggestedQuestions" for open-ended questions expecting free text (name, email, company, or any other written answer) — asking someone their name and offering clickable category labels like "First name" or "Nickname" is wrong; leave it as an empty array instead and let them type their answer.',
   '- Never wrap the JSON in code fences. Output ONLY the JSON object.',
+]
+
+// Included in every system prompt regardless of custom persona text — baseline
+// behavior the assistant should have without an admin needing to spell it out.
+const BASELINE_INTELLIGENCE_RULES = [
+  '',
+  'BASELINE BEHAVIOR — always follow these, on top of any persona or flow above:',
+  '- Never ask the visitor for information they already gave earlier in this conversation (industry, role, name, email, or anything else). Check the conversation history before asking a question.',
+  '- If the visitor explicitly asks to talk to sales, speak to someone, book a meeting, schedule a call, or similar — stop whatever qualification flow you are in immediately. Do not ask further questions first. Simply acknowledge and tell them they can use the "Book a meeting" button to pick a time.',
+  '- When pointing the visitor to a specific asset in this track, reference it using its exact reference token, e.g. [[asset:<id>:<title>]], exactly as given in the asset list below. Never output a raw http(s) URL for a track asset, and never invent a reference token for an asset not listed below.',
 ]
 
 export async function buildSystemPrompt(
@@ -429,9 +441,10 @@ export async function buildSystemPrompt(
       assetSection,
       currentSection,
       'GUARDRAILS — follow exactly, no exceptions:',
-      '- Only recommend assets listed above, using their exact title and URL. Never invent asset titles, links, statistics, or descriptions.',
+      '- Only recommend assets listed above, using their exact title and reference token. Never invent asset titles, links, statistics, or descriptions.',
       '- Never fabricate outcome stats, customer names, or claims not present in the asset data above.',
       '- Stay on the topic of this track and its assets; redirect anything unrelated back to the track.',
+      ...BASELINE_INTELLIGENCE_RULES,
       ...JSON_OUTPUT_INSTRUCTIONS,
     ]
       .join('\n')
@@ -450,7 +463,7 @@ export async function buildSystemPrompt(
     '1. Answer from the CURRENT ASSET content above. Questions about speakers, presenters, authors, or people mentioned in the current asset ARE answerable if the name appears in its content. If the name is not in the content, say you cannot find it in this asset — do NOT pull names from other assets.',
     `2. For ANY off-topic question (weather, geography, math, news, coding, general trivia, pin/zip codes, other companies, anything not in the assets above), reply with EXACTLY this and nothing else: "${redirectLine}"`,
     '3. Answer ONLY using facts present in the TRACK ASSETS above. Never use outside knowledge for product claims, pricing, statistics, timelines, company facts, or definitions.',
-    '4. Never invent asset titles, URLs, statistics, customer names, availability, or pricing. When citing an asset, use its exact title.',
+    '4. Never invent asset titles, reference tokens, statistics, customer names, availability, or pricing. When citing an asset, use its exact title and reference token.',
     '5. Be concise and COMPLETE: 1–2 sentences for simple questions; for "key points"/"summary" questions use at most 3 short bullet lines (start each with "- "), one line each, no nested bullets. Hard limit 3 bullets. No trailing "want me to..." offers. Always finish your last sentence.',
     '6. If the answer is in the asset content above, quote or paraphrase it directly.',
     '7. No bold, italics, headings, or code formatting. Plain sentences and simple "- " bullets only.',
@@ -458,6 +471,7 @@ export async function buildSystemPrompt(
     'EXAMPLES of questions you CAN answer (name is in the content): "who is the speaker", "who presents this video", "who wrote this".',
     'EXAMPLES of off-topic questions you MUST redirect (do NOT answer them): "what is the weather", "560062 pin code", "who won the world cup", "write me code", "what is 2+2", "tell me about Microsoft".',
     `For the off-topic ones, your entire reply is: "${redirectLine}"`,
+    ...BASELINE_INTELLIGENCE_RULES,
     ...JSON_OUTPUT_INSTRUCTIONS,
   ]
     .join('\n')

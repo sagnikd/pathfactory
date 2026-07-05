@@ -26,6 +26,7 @@ interface TrackChatWidgetProps {
   proactiveToken?: number
   proactiveAssetTitle?: string
   downloadChatToken?: number
+  onNavigateToAsset?: (assetId: string) => void
 }
 
 type ChatMessage = {
@@ -51,35 +52,56 @@ function isValidHttpsUrl(value: string | undefined): value is string {
   }
 }
 
-const URL_SPLIT_RE = /(https?:\/\/[^\s)]+)/g
-const URL_FULL_RE = /^https?:\/\/[^\s)]+$/
+// Matches either an in-session asset reference token — [[asset:<id>:<title>]],
+// emitted by the model instead of a raw URL — or a bare http(s) link, kept as
+// a fallback in case the model slips a real URL through anyway.
+const MESSAGE_TOKEN_RE = /\[\[asset:([a-zA-Z0-9-]+):([^\]]+)\]\]|(https?:\/\/[^\s)]+)/g
 
-// Render message text with bare URLs turned into clickable links, everything
-// else left as plain text — chat replies aren't markdown, just plain strings
-// that happen to contain asset links. `split` with a capturing group returns
-// the matched URLs interleaved at odd indices alongside the surrounding text.
-function linkifyText(text: string, linkClassName: string): React.ReactNode[] {
-  return text.split(URL_SPLIT_RE).map((part, i) => {
-    if (!URL_FULL_RE.test(part)) return part
-    // Trailing punctuation (e.g. a period ending the sentence) shouldn't be part of the link
-    const trailingMatch = part.match(/[).,;:!?]+$/)
-    const trailing = trailingMatch ? trailingMatch[0] : ''
-    const href = trailing ? part.slice(0, -trailing.length) : part
-    return (
-      <span key={i}>
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={linkClassName}
-          onClick={(e) => e.stopPropagation()}
+// Render message text with asset references turned into in-session navigation
+// buttons (no full page load, no exposed backend/CDN URL) and any remaining
+// bare URLs turned into normal external links.
+function renderMessageContent(
+  text: string,
+  linkClassName: string,
+  onNavigateToAsset?: (assetId: string) => void
+): React.ReactNode[] {
+  const nodes: React.ReactNode[] = []
+  let lastIndex = 0
+  let key = 0
+  MESSAGE_TOKEN_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = MESSAGE_TOKEN_RE.exec(text))) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index))
+    const [full, assetId, assetTitle, url] = match
+    if (assetId) {
+      nodes.push(
+        <button
+          key={key++}
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onNavigateToAsset?.(assetId) }}
+          className={`inline bg-transparent border-0 p-0 m-0 cursor-pointer text-left ${linkClassName}`}
         >
-          {href}
-        </a>
-        {trailing}
-      </span>
-    )
-  })
+          {assetTitle}
+        </button>
+      )
+    } else if (url) {
+      // Trailing punctuation (e.g. a period ending the sentence) shouldn't be part of the link
+      const trailingMatch = url.match(/[).,;:!?]+$/)
+      const trailing = trailingMatch ? trailingMatch[0] : ''
+      const href = trailing ? url.slice(0, -trailing.length) : url
+      nodes.push(
+        <span key={key++}>
+          <a href={href} target="_blank" rel="noopener noreferrer" className={linkClassName} onClick={(e) => e.stopPropagation()}>
+            {href}
+          </a>
+          {trailing}
+        </span>
+      )
+    }
+    lastIndex = match.index + full.length
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex))
+  return nodes
 }
 
 function TypingIndicator({ accentColor }: { accentColor: string }) {
@@ -133,6 +155,7 @@ export function TrackChatWidget({
   proactiveToken,
   proactiveAssetTitle,
   downloadChatToken,
+  onNavigateToAsset,
 }: TrackChatWidgetProps) {
   const firstName = visitorName?.trim().split(/\s+/)[0] || null
   const greeting: ChatMessage | null = firstName
@@ -484,11 +507,12 @@ export function TrackChatWidget({
                         : undefined
                     }
                   >
-                    {linkifyText(
+                    {renderMessageContent(
                       message.content,
                       message.role === 'user'
                         ? 'underline decoration-white/60 hover:decoration-white'
-                        : 'underline text-slate-900 decoration-slate-400 hover:decoration-slate-900 break-all'
+                        : 'underline text-slate-900 decoration-slate-400 hover:decoration-slate-900 font-medium',
+                      onNavigateToAsset
                     )}
                   </div>
                 </div>
