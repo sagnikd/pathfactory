@@ -21,7 +21,6 @@ import type { LeadField, GateConfig } from '@/components/GateOverlay'
 import { AssetUploadDialog } from '@/components/AssetUploadDialog'
 import { RichLinkInput } from '@/components/RichLinkInput'
 import { SystemPromptEditor } from '@/components/SystemPromptEditor'
-import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { markdownToHtml } from '@/lib/systemPromptHtml'
 
 type Asset = {
@@ -153,81 +152,6 @@ export function TrackBuilder({
     existingBrand?.cta?.chatMessage ?? 'Sure, let me set up a meeting with our sales team.'
   )
 
-  const generateOgThumbnail = useCallback(async () => {
-    setGeneratingOg(true)
-    try {
-      const displayTitle = (externalTitle.trim() || title.trim()) || 'Content Track'
-      const accent = '#30B2BF'
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        const W = 1200, H = 630
-        const canvas = document.createElement('canvas')
-        canvas.width = W; canvas.height = H
-        const ctx = canvas.getContext('2d')!
-
-        // Dark gradient background
-        const bg = ctx.createLinearGradient(0, 0, W, H)
-        bg.addColorStop(0, '#0d1f2d')
-        bg.addColorStop(1, '#1a3545')
-        ctx.fillStyle = bg
-        ctx.fillRect(0, 0, W, H)
-
-        // Decorative circles (accent, semi-transparent)
-        const circle = (x: number, y: number, r: number, alpha: number) => {
-          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2)
-          ctx.fillStyle = `rgba(48,178,191,${alpha})`; ctx.fill()
-        }
-        circle(W - 80, H + 60, 380, 0.12)
-        circle(W + 60, -100, 260, 0.08)
-        circle(-60, H - 60, 200, 0.07)
-
-        // Top accent bar
-        ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 7)
-
-        // Label
-        ctx.font = '600 18px sans-serif'
-        ctx.fillStyle = accent
-        ctx.fillText('CONTENT TRACK', 80, 118)
-
-        // Title — word-wrap into up to 3 lines
-        ctx.font = 'bold 68px sans-serif'
-        ctx.fillStyle = '#ffffff'
-        const maxW = 1020, lh = 84
-        const words = displayTitle.split(' ')
-        const lines: string[] = []
-        let cur = ''
-        for (const w of words) {
-          const test = cur ? `${cur} ${w}` : w
-          if (ctx.measureText(test).width > maxW && cur) { lines.push(cur); cur = w }
-          else cur = test
-        }
-        if (cur) lines.push(cur)
-        const shown = lines.slice(0, 3)
-        const totalH = shown.length * lh
-        const startY = Math.round((H - totalH) / 2) + 28
-        shown.forEach((l, i) => ctx.fillText(l, 80, startY + i * lh))
-
-        // Bottom divider + brand
-        ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(80, H - 68, W - 160, 1)
-        ctx.font = '500 17px sans-serif'
-        ctx.fillStyle = 'rgba(255,255,255,0.45)'
-        ctx.fillText('HCLSoftware', 80, H - 30)
-
-        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png')
-      })
-
-      const supabase = createSupabaseClient()
-      const path = `og-images/${orgId}/${initialTrack?.id ?? crypto.randomUUID()}.png`
-      const { error } = await supabase.storage.from('assets').upload(path, blob, { contentType: 'image/png', upsert: true })
-      if (error) throw error
-      const { data } = supabase.storage.from('assets').getPublicUrl(path)
-      setOgImageUrl(data.publicUrl)
-    } catch (err) {
-      console.error('[og-thumbnail]', err)
-    } finally {
-      setGeneratingOg(false)
-    }
-  }, [externalTitle, title, orgId, initialTrack?.id])
-
   function handleLogoFile(file: File) {
     const reader = new FileReader()
     reader.onload = () => setLogoUrl(String(reader.result ?? ''))
@@ -296,6 +220,31 @@ export function TrackBuilder({
     .filter(Boolean) as Asset[]
 
   const libraryAssets = allAvailableAssets.filter((a) => !selectedIds.includes(a.id))
+
+  const generateOgThumbnail = useCallback(async () => {
+    setGeneratingOg(true)
+    try {
+      const res = await fetch('/api/generate-og-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trackId: initialTrack?.id ?? null,
+          trackTitle: externalTitle.trim() || title.trim(),
+          assetTitles: trackAssets.map(a => a.title).filter(Boolean),
+          assetDescriptions: trackAssets
+            .map(a => (a as Asset & { description?: string }).description)
+            .filter(Boolean) as string[],
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as { url?: string; error?: string }
+      if (!res.ok || !data.url) throw new Error(data.error ?? 'Generation failed')
+      setOgImageUrl(data.url)
+    } catch (err) {
+      console.error('[og-thumbnail]', err)
+    } finally {
+      setGeneratingOg(false)
+    }
+  }, [externalTitle, title, initialTrack?.id, trackAssets])
 
   function addAsset(asset: Asset) {
     setSelectedIds((prev) => [...prev, asset.id])
