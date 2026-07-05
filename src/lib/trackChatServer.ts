@@ -370,19 +370,26 @@ const JSON_OUTPUT_INSTRUCTIONS = [
 
 // Included in every system prompt regardless of custom persona text — baseline
 // behavior the assistant should have without an admin needing to spell it out.
-const BASELINE_INTELLIGENCE_RULES = [
-  '',
-  'BASELINE BEHAVIOR — always follow these, on top of any persona or flow above:',
-  '- Never ask the visitor for information they already gave earlier in this conversation (industry, role, name, email, or anything else). Check the conversation history before asking a question.',
-  '- If the visitor explicitly asks to talk to sales, speak to someone, book a meeting, schedule a call, or similar — stop whatever qualification flow you are in immediately. Do not ask further questions first. Simply acknowledge and tell them they can use the "Book a meeting" button to pick a time.',
-  '- When pointing the visitor to a specific asset in this track, reference it using its exact reference token, e.g. [[asset:<id>:<title>]], exactly as given in the asset list below. Never output a raw http(s) URL for a track asset, and never invent a reference token for an asset not listed below.',
-]
+function baselineIntelligenceRules(meetingConfigured: boolean): string[] {
+  const salesIntentRule = meetingConfigured
+    ? '- If the visitor explicitly asks to talk to sales, speak to someone, book a meeting, schedule a call, or similar — stop whatever qualification flow you are in immediately. Do not ask further questions first. Simply acknowledge and tell them they can use the "Book a meeting" button to pick a time.'
+    : '- If the visitor explicitly asks to talk to sales, speak to someone, book a meeting, schedule a call, or similar — there is no meeting-booking link configured, so instead stop whatever qualification flow you are in and ask for their email address and phone number so the team can follow up directly. Once you have both, confirm with: "Thanks — someone from our team will get back to you within 24 hours." Do not offer a "Book a meeting" button since none exists.'
+
+  return [
+    '',
+    'BASELINE BEHAVIOR — always follow these, on top of any persona or flow above:',
+    '- Never ask the visitor for information they already gave earlier in this conversation (industry, role, name, email, phone, or anything else). Check the conversation history before asking a question.',
+    salesIntentRule,
+    '- When pointing the visitor to a specific asset in this track, reference it using its exact reference token, e.g. [[asset:<id>:<title>]], exactly as given in the asset list below. Never output a raw http(s) URL for a track asset, and never invent a reference token for an asset not listed below.',
+  ]
+}
 
 export async function buildSystemPrompt(
   track: Track,
   trackAssets: Asset[],
   currentAsset?: Asset,
-  customSystemPrompt?: string
+  customSystemPrompt?: string,
+  meetingConfigured = false
 ): Promise<string> {
   // Only extract the CURRENT asset's content — other track assets contribute
   // title/type/metadata only. This prevents content from unrelated assets (e.g.
@@ -444,7 +451,7 @@ export async function buildSystemPrompt(
       '- Only recommend assets listed above, using their exact title and reference token. Never invent asset titles, links, statistics, or descriptions.',
       '- Never fabricate outcome stats, customer names, or claims not present in the asset data above.',
       '- Stay on the topic of this track and its assets; redirect anything unrelated back to the track.',
-      ...BASELINE_INTELLIGENCE_RULES,
+      ...baselineIntelligenceRules(meetingConfigured),
       ...JSON_OUTPUT_INSTRUCTIONS,
     ]
       .join('\n')
@@ -471,7 +478,7 @@ export async function buildSystemPrompt(
     'EXAMPLES of questions you CAN answer (name is in the content): "who is the speaker", "who presents this video", "who wrote this".',
     'EXAMPLES of off-topic questions you MUST redirect (do NOT answer them): "what is the weather", "560062 pin code", "who won the world cup", "write me code", "what is 2+2", "tell me about Microsoft".',
     `For the off-topic ones, your entire reply is: "${redirectLine}"`,
-    ...BASELINE_INTELLIGENCE_RULES,
+    ...baselineIntelligenceRules(meetingConfigured),
     ...JSON_OUTPUT_INSTRUCTIONS,
   ]
     .join('\n')

@@ -254,7 +254,8 @@ async function callOpenAI(
   currentAssetId: string | null,
   askedQuestions: string[],
   history: ChatTurn[],
-  customSystemPrompt: string | undefined
+  customSystemPrompt: string | undefined,
+  meetingConfigured: boolean
 ): Promise<AssistantPayload> {
   const apiKey = process.env.OPENAI_API_KEY?.trim()
   if (!apiKey) {
@@ -269,7 +270,7 @@ async function callOpenAI(
     ? context.assets.find((a) => a.id === currentAssetId)
     : undefined
 
-  const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset, customSystemPrompt)
+  const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset, customSystemPrompt, meetingConfigured)
 
   // Multi-turn: the model needs prior turns to track conversation state
   // (e.g. which qualification step it's on) — a single message has no memory.
@@ -417,8 +418,17 @@ async function persistChatTurn(
 // ---------------------------------------------------------------------------
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
+const PHONE_RE = /\+?\d[\d\s().-]{6,18}\d/
 const PLAUSIBLE_NAME_RE = /^[a-zA-Z][a-zA-Z' -]{0,39}$/
 const SALES_INTENT_RE = /\b(talk|speak|chat|connect)\s+(to|with)\s+(sales|someone|a\s+human|a\s+rep|an?\s+agent)\b|\bbook\s+a\s+(meeting|call|demo)\b|\bschedule\s+a\s+(call|meeting|demo)\b|\bcontact\s+sales\b/i
+
+function extractPhone(message: string): string | null {
+  const match = message.match(PHONE_RE)
+  if (!match) return null
+  const digits = match[0].replace(/\D/g, '')
+  if (digits.length < 7 || digits.length > 15) return null
+  return match[0].trim()
+}
 
 async function captureEmailFromMessage(
   trackId: string,
@@ -428,6 +438,9 @@ async function captureEmailFromMessage(
   const match = message.match(EMAIL_RE)
   if (!match) return
   const email = match[0].toLowerCase()
+  // Visitor may give email and phone in the same message (e.g. when no
+  // meeting URL is configured and both are requested at once).
+  const phone = extractPhone(message)
 
   const [row] = await db
     .select({ visitorId: sessions.visitorId, capturedEmail: visitors.capturedEmail })
@@ -444,10 +457,11 @@ async function captureEmailFromMessage(
   const scoreMap = await computeLeadScores([row.visitorId])
   const score = scoreMap[row.visitorId]?.total ?? 0
 
+  const formFields = phone ? { email, phone, source: 'chat' } : { email, source: 'chat' }
   const [lead] = await db.insert(leads).values({
     visitorId: row.visitorId,
     email,
-    formResponsesJson: { email, source: 'chat' },
+    formResponsesJson: formFields,
     score,
   }).returning({ id: leads.id })
 
@@ -456,8 +470,40 @@ async function captureEmailFromMessage(
     visitorId: row.visitorId,
     leadId: lead.id,
     email,
-    formFields: { email, source: 'chat' },
+    formFields,
   }).catch(() => {})
+}
+
+// Phone given in a separate message from email (e.g. "email@x.com" then,
+// next turn, "555-123-4567") — attach it to the most recent lead for this
+// visitor. Requires a lead to already exist; a phone number alone with no
+// email isn't enough to create one.
+async function capturePhoneFromMessage(
+  sessionId: string,
+  message: string
+): Promise<void> {
+  const phone = extractPhone(message)
+  if (!phone) return
+
+  const [row] = await db
+    .select({ visitorId: sessions.visitorId })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1)
+  if (!row) return
+
+  const [lead] = await db
+    .select({ id: leads.id, formResponsesJson: leads.formResponsesJson })
+    .from(leads)
+    .where(eq(leads.visitorId, row.visitorId))
+    .orderBy(desc(leads.createdAt))
+    .limit(1)
+  if (!lead) return
+
+  const fields = (lead.formResponsesJson as Record<string, unknown> | null) ?? {}
+  if (typeof fields.phone === 'string' && fields.phone.trim()) return
+
+  await db.update(leads).set({ formResponsesJson: { ...fields, phone } }).where(eq(leads.id, lead.id))
 }
 
 async function captureNameFromMessage(
@@ -586,7 +632,7 @@ export async function POST(req: Request) {
       ? currentAssetId
       : null
 
-    const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt)
+    const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt, Boolean(chatConfig.meetingUrl))
 
     // Persist the turn to the chat inbox (best-effort — never block the reply).
     // Kickoff turns get a human-readable label instead of the raw internal
@@ -598,10 +644,13 @@ export async function POST(req: Request) {
     )
 
     if (!isKickoff) {
-      // Soft lead capture — visitor volunteered an email or name conversationally
+      // Soft lead capture — visitor volunteered an email, phone, or name conversationally
       if (sessionId) {
         void captureEmailFromMessage(trackId, sessionId, message).catch((err) =>
           console.error('[track-chat] email capture failed:', err)
+        )
+        void capturePhoneFromMessage(sessionId, message).catch((err) =>
+          console.error('[track-chat] phone capture failed:', err)
         )
         void captureNameFromMessage(sessionId, message, history).catch((err) =>
           console.error('[track-chat] name capture failed:', err)
