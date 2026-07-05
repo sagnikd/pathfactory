@@ -1,6 +1,6 @@
 import { db } from '@/db'
 import { leads, visitors, sessions, engagements, assets, tracks } from '@/db/schema'
-import { eq, inArray, desc, asc, and, ne, count, sql } from 'drizzle-orm'
+import { eq, inArray, desc, asc, and, ne, count, sql, isNotNull } from 'drizzle-orm'
 import LeadClientList from './LeadClientList'
 import { computeLeadScores } from '@/lib/leadScore'
 import { getDashboardAuthContext } from '@/lib/auth/impersonation'
@@ -21,7 +21,22 @@ export default async function LeadsPage() {
     .innerJoin(engagements, eq(sessions.id, engagements.sessionId))
     .where(inArray(engagements.assetId, orgAssetIds))
 
-  const validVisitorIds = Array.from(new Set(orgSessions.map(s => s.visitorId)))
+  const visitorIdsFromSessions = Array.from(new Set(orgSessions.map(s => s.visitorId)))
+
+  // Also include leads submitted via the gate form by fresh visitors who had no
+  // session yet (middleware sets the cookie on the response, so page.tsx can't
+  // read it back on first-ever visit — the visitor has no session/engagements
+  // but the lead row carries the trackId, which scopes it to this org).
+  const orgTracks = await db.select({ id: tracks.id }).from(tracks).where(eq(tracks.organizationId, orgId))
+  const orgTrackIds = orgTracks.map(t => t.id)
+
+  const visitorIdsFromLeads = orgTrackIds.length > 0
+    ? (await db.select({ visitorId: leads.visitorId }).from(leads)
+        .where(and(inArray(leads.trackId, orgTrackIds), isNotNull(leads.trackId))))
+        .map(l => l.visitorId)
+    : []
+
+  const validVisitorIds = Array.from(new Set([...visitorIdsFromSessions, ...visitorIdsFromLeads]))
 
   if (validVisitorIds.length === 0) {
     return <div className="p-8"><h1 className="text-3xl font-bold mb-8">Leads & Visitors</h1><p className="text-muted-foreground">No leads found yet.</p></div>

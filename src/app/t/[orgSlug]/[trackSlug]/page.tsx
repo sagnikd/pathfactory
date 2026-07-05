@@ -30,6 +30,7 @@ async function identifyVisitorFromUrl(
   const scoreMap = await computeLeadScores([visitor.id])
   const [lead] = await db.insert(leads).values({
     visitorId: visitor.id,
+    trackId,
     email,
     formResponsesJson: fname ? { firstName: fname, source: 'email_campaign' } : { source: 'email_campaign' },
     score: scoreMap[visitor.id]?.total ?? 0,

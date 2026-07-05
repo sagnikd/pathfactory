@@ -165,6 +165,9 @@ export const engagements = pgTable("engagements", {
 export const leads = pgTable("leads", {
   id: uuid("id").primaryKey().defaultRandom(),
   visitorId: uuid("visitor_id").references(() => visitors.id, { onDelete: "cascade" }).notNull(),
+  // nullable — set on gate-form submissions so fresh visitors (no session) can
+  // still be attributed to the org via track → org join in the dashboard query.
+  trackId: uuid("track_id").references(() => tracks.id, { onDelete: "set null" }),
   email: text("email").notNull(),
   formResponsesJson: jsonb("form_responses_json"),
   score: integer("score").default(0).notNull(),

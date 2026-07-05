@@ -77,6 +77,7 @@ export async function POST(req: Request) {
     } else {
       const [inserted] = await db.insert(leads).values({
         visitorId: resolvedVisitorId,
+        trackId: typeof trackId === 'string' ? trackId : null,
         email,
         formResponsesJson: fields,
         score,
