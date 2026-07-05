@@ -27,6 +27,7 @@ interface TrackChatWidgetProps {
   proactiveAssetTitle?: string
   downloadChatToken?: number
   onNavigateToAsset?: (assetId: string) => void
+  visitorProfile?: Record<string, string> | null
 }
 
 type ChatMessage = {
@@ -156,6 +157,7 @@ export function TrackChatWidget({
   proactiveAssetTitle,
   downloadChatToken,
   onNavigateToAsset,
+  visitorProfile,
 }: TrackChatWidgetProps) {
   const firstName = visitorName?.trim().split(/\s+/)[0] || null
   const greeting: ChatMessage | null = firstName
@@ -307,6 +309,7 @@ export function TrackChatWidget({
           message: text,
           history: priorHistory,
           askedQuestions: nextAskedQuestions,
+          visitorProfile: visitorProfile ?? null,
         }),
       })
       const data = await response.json().catch(() => ({})) as ChatApiResponse
@@ -367,6 +370,7 @@ export function TrackChatWidget({
           kickoffAssetTitle: proactiveAssetTitle ?? '',
           history: conversationHistory(messages),
           askedQuestions,
+          visitorProfile: visitorProfile ?? null,
         }),
       })
       const data = await response.json().catch(() => ({})) as ChatApiResponse

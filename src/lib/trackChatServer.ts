@@ -406,7 +406,8 @@ export async function buildSystemPrompt(
   trackAssets: Asset[],
   currentAsset?: Asset,
   customSystemPrompt?: string,
-  meetingConfigured = false
+  meetingConfigured = false,
+  visitorProfile?: Record<string, string> | null
 ): Promise<string> {
   // Only extract the CURRENT asset's content — other track assets contribute
   // title/type/metadata only. This prevents content from unrelated assets (e.g.
@@ -451,6 +452,31 @@ export async function buildSystemPrompt(
     ? `That's outside what this track covers. This track is about "${track.title}" — ask me about ${trackAssets.slice(0, 2).map((a) => `"${a.title}"`).join(' or ')}.`
     : `That's outside what this track covers. Ask me about "${track.title}".`
 
+  // Build a visitor profile section if gate form data was submitted this session.
+  // Fields map: known keys → readable labels; unknown keys use title-cased key name.
+  const FIELD_LABELS: Record<string, string> = {
+    firstName: 'First name',
+    lastName: 'Last name',
+    email: 'Email',
+    company: 'Company',
+    industry: 'Industry',
+    jobTitle: 'Job title',
+    phone: 'Phone',
+    country: 'Country',
+    city: 'City',
+  }
+  const profileSection = visitorProfile && Object.keys(visitorProfile).length > 0
+    ? [
+        '',
+        'VISITOR PROFILE — already collected from the gate form this session:',
+        ...Object.entries(visitorProfile)
+          .filter(([, v]) => v.trim())
+          .map(([k, v]) => `  ${FIELD_LABELS[k] ?? k.replace(/([A-Z])/g, ' $1').trim()}: ${v}`),
+        'Do NOT ask the visitor for any of these fields again. They have already been provided.',
+        '',
+      ].join('\n')
+    : ''
+
   // Custom persona/behavior configured in the dashboard — takes priority over
   // the default Q&A persona below, but still gets the real asset data and the
   // same anti-hallucination guardrails so it can only ever recommend real
@@ -460,6 +486,7 @@ export async function buildSystemPrompt(
       customSystemPrompt,
       '',
       `You are operating on the content track titled "${track.title}".`,
+      profileSection,
       '',
       'ASSETS AVAILABLE IN THIS TRACK (the only content you may reference or recommend):',
       assetSection,
@@ -480,6 +507,7 @@ export async function buildSystemPrompt(
     `You are a content-guide assistant for ONE specific content track titled "${track.title}".`,
     'You are NOT a general-purpose assistant. You ONLY discuss this track and its assets.',
     'The CURRENT ASSET section below contains the full text of what the visitor is watching/reading right now. Answer questions from THAT content first.',
+    profileSection,
     '',
     'OTHER ASSETS IN THIS TRACK (metadata only — do not invent their content):',
     assetSection,

@@ -255,7 +255,8 @@ async function callOpenAI(
   askedQuestions: string[],
   history: ChatTurn[],
   customSystemPrompt: string | undefined,
-  meetingConfigured: boolean
+  meetingConfigured: boolean,
+  visitorProfile?: Record<string, string> | null
 ): Promise<AssistantPayload> {
   const apiKey = process.env.OPENAI_API_KEY?.trim()
   if (!apiKey) {
@@ -270,7 +271,7 @@ async function callOpenAI(
     ? context.assets.find((a) => a.id === currentAssetId)
     : undefined
 
-  const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset, customSystemPrompt, meetingConfigured)
+  const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset, customSystemPrompt, meetingConfigured, visitorProfile)
 
   // Multi-turn: the model needs prior turns to track conversation state
   // (e.g. which qualification step it's on) — a single message has no memory.
@@ -614,6 +615,14 @@ export async function POST(req: Request) {
           .slice(-20)
       : []
 
+    const visitorProfile: Record<string, string> | null = isRecord(body.visitorProfile)
+      ? Object.fromEntries(
+          Object.entries(body.visitorProfile)
+            .filter(([, v]) => typeof v === 'string' && v.trim())
+            .map(([k, v]) => [k, (v as string).trim().slice(0, 200)])
+        )
+      : null
+
     const rateLimitKey = await getRateLimitKey(trackId)
     if (checkRateLimit(rateLimitKey)) {
       return NextResponse.json({ error: 'Too many chat requests' }, { status: 429 })
@@ -646,7 +655,7 @@ export async function POST(req: Request) {
       ? currentAssetId
       : null
 
-    const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt, Boolean(chatConfig.meetingUrl))
+    const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt, Boolean(chatConfig.meetingUrl), visitorProfile)
 
     // Persist the turn to the chat inbox (best-effort — never block the reply).
     // Kickoff turns get a human-readable label instead of the raw internal

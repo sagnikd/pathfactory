@@ -560,6 +560,7 @@ export default function TrackViewer({
         proactiveAssetTitle={currentAsset?.displayTitle ?? currentAsset?.title}
         downloadChatToken={downloadChatToken}
         onNavigateToAsset={handleNavigateToAsset}
+        visitorProfile={submittedFields}
       />
     </div>
   )
