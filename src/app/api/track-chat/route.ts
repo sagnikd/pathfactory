@@ -587,12 +587,16 @@ export async function POST(req: Request) {
 
     const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt)
 
-    if (!isKickoff) {
-      // Persist the turn to the chat inbox (best-effort — never block the reply)
-      void persistChatTurn(trackId, sessionId, message, assistant.answer).catch((err) =>
-        console.error('[track-chat] persist failed:', err)
-      )
+    // Persist the turn to the chat inbox (best-effort — never block the reply).
+    // Kickoff turns get a human-readable label instead of the raw internal
+    // trigger text, so the transcript reads sensibly rather than starting
+    // mid-conversation with no context for how the assistant opened.
+    const persistedMessage = isKickoff ? '(Assistant proactively started this conversation)' : message
+    void persistChatTurn(trackId, sessionId, persistedMessage, assistant.answer).catch((err) =>
+      console.error('[track-chat] persist failed:', err)
+    )
 
+    if (!isKickoff) {
       // Soft lead capture — visitor volunteered an email or name conversationally
       if (sessionId) {
         void captureEmailFromMessage(trackId, sessionId, message).catch((err) =>
