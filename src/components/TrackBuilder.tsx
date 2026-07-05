@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,13 +14,14 @@ import {
 import {
   FileText, Video, Link2, Image as ImageIcon,
   Plus, Loader2, GripVertical, X, Mail, ChevronRight, MessageSquare, Pencil,
-  ImagePlus, Megaphone,
+  ImagePlus, Megaphone, Wand2,
 } from 'lucide-react'
 import { createTrack, updateTrack } from '@/app/dashboard/tracks/actions'
 import type { LeadField, GateConfig } from '@/components/GateOverlay'
 import { AssetUploadDialog } from '@/components/AssetUploadDialog'
 import { RichLinkInput } from '@/components/RichLinkInput'
 import { SystemPromptEditor } from '@/components/SystemPromptEditor'
+import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { markdownToHtml } from '@/lib/systemPromptHtml'
 
 type Asset = {
@@ -127,6 +128,7 @@ export function TrackBuilder({
   const [importedAssets, setImportedAssets] = useState<Asset[]>([])
   const [seoTitle, setSeoTitle] = useState(initialTrack?.themeJson?.seoTitle ?? '')
   const [ogImageUrl, setOgImageUrl] = useState(initialTrack?.themeJson?.ogImageUrl ?? '')
+  const [generatingOg, setGeneratingOg] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   // ── Chat assistant config ────────────────────────────────────────────────
@@ -150,6 +152,81 @@ export function TrackBuilder({
   const [ctaChatMessage, setCtaChatMessage] = useState(
     existingBrand?.cta?.chatMessage ?? 'Sure, let me set up a meeting with our sales team.'
   )
+
+  const generateOgThumbnail = useCallback(async () => {
+    setGeneratingOg(true)
+    try {
+      const displayTitle = (externalTitle.trim() || title.trim()) || 'Content Track'
+      const accent = '#30B2BF'
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        const W = 1200, H = 630
+        const canvas = document.createElement('canvas')
+        canvas.width = W; canvas.height = H
+        const ctx = canvas.getContext('2d')!
+
+        // Dark gradient background
+        const bg = ctx.createLinearGradient(0, 0, W, H)
+        bg.addColorStop(0, '#0d1f2d')
+        bg.addColorStop(1, '#1a3545')
+        ctx.fillStyle = bg
+        ctx.fillRect(0, 0, W, H)
+
+        // Decorative circles (accent, semi-transparent)
+        const circle = (x: number, y: number, r: number, alpha: number) => {
+          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(48,178,191,${alpha})`; ctx.fill()
+        }
+        circle(W - 80, H + 60, 380, 0.12)
+        circle(W + 60, -100, 260, 0.08)
+        circle(-60, H - 60, 200, 0.07)
+
+        // Top accent bar
+        ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 7)
+
+        // Label
+        ctx.font = '600 18px sans-serif'
+        ctx.fillStyle = accent
+        ctx.fillText('CONTENT TRACK', 80, 118)
+
+        // Title — word-wrap into up to 3 lines
+        ctx.font = 'bold 68px sans-serif'
+        ctx.fillStyle = '#ffffff'
+        const maxW = 1020, lh = 84
+        const words = displayTitle.split(' ')
+        const lines: string[] = []
+        let cur = ''
+        for (const w of words) {
+          const test = cur ? `${cur} ${w}` : w
+          if (ctx.measureText(test).width > maxW && cur) { lines.push(cur); cur = w }
+          else cur = test
+        }
+        if (cur) lines.push(cur)
+        const shown = lines.slice(0, 3)
+        const totalH = shown.length * lh
+        const startY = Math.round((H - totalH) / 2) + 28
+        shown.forEach((l, i) => ctx.fillText(l, 80, startY + i * lh))
+
+        // Bottom divider + brand
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(80, H - 68, W - 160, 1)
+        ctx.font = '500 17px sans-serif'
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'
+        ctx.fillText('HCLSoftware', 80, H - 30)
+
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png')
+      })
+
+      const supabase = createSupabaseClient()
+      const path = `og-images/${orgId}/${initialTrack?.id ?? crypto.randomUUID()}.png`
+      const { error } = await supabase.storage.from('assets').upload(path, blob, { contentType: 'image/png', upsert: true })
+      if (error) throw error
+      const { data } = supabase.storage.from('assets').getPublicUrl(path)
+      setOgImageUrl(data.publicUrl)
+    } catch (err) {
+      console.error('[og-thumbnail]', err)
+    } finally {
+      setGeneratingOg(false)
+    }
+  }, [externalTitle, title, orgId, initialTrack?.id])
 
   function handleLogoFile(file: File) {
     const reader = new FileReader()
@@ -413,12 +490,31 @@ export function TrackBuilder({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="og-image">Social preview image URL</Label>
-            <Input
-              id="og-image"
-              placeholder="https://your-cdn.com/track-banner.png"
-              value={ogImageUrl}
-              onChange={(e) => setOgImageUrl(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="og-image"
+                placeholder="https://your-cdn.com/track-banner.png"
+                value={ogImageUrl}
+                onChange={(e) => setOgImageUrl(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={generateOgThumbnail}
+                disabled={generatingOg}
+                className="shrink-0 gap-1.5"
+                title="Generate a 1200×630 thumbnail from the track title"
+              >
+                {generatingOg
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Wand2 className="h-3.5 w-3.5" />}
+                Generate
+              </Button>
+            </div>
+            {ogImageUrl && (
+              <img src={ogImageUrl} alt="OG preview" className="mt-2 rounded border w-full max-w-sm object-cover" style={{aspectRatio:'1200/630'}} />
+            )}
             <p className="text-xs text-muted-foreground">1200×630px recommended. Shown when sharing on LinkedIn, Slack, etc.</p>
           </div>
         </div>
