@@ -360,21 +360,26 @@ export default async function AnalyticsDashboard({
   `)
   const topVisitors = Array.from(visitorsRes2) as VisitorRow[]
 
-  // ── 6b. Campaign sources — session volume by UTM source ──────────────────
+  // ── 6b. Campaign breakdown — session volume by UTM source/medium/campaign ──
   type CampaignRow = { source: string; sessions: number }
-  const campaignRes = await db.execute<CampaignRow>(sql`
-    SELECT
-      COALESCE(NULLIF(TRIM(s.utm_source), ''), 'Direct / Other') AS source,
-      COUNT(DISTINCT s.id)::int AS sessions
-    FROM sessions s
-    JOIN engagements e ON e.session_id = s.id ${dateFilter}
-    JOIN assets      a ON a.id = e.asset_id
-    WHERE a.organization_id = ${orgId}::uuid
-      ${trackFilter}
-    GROUP BY 1
-    ORDER BY sessions DESC
-  `)
-  const campaignData = Array.from(campaignRes) as CampaignRow[]
+  async function campaignBreakdownBy(column: 'utm_source' | 'utm_medium' | 'utm_campaign') {
+    const res = await db.execute<CampaignRow>(sql`
+      SELECT
+        COALESCE(NULLIF(TRIM(s.${sql.raw(column)}), ''), 'Direct / Other') AS source,
+        COUNT(DISTINCT s.id)::int AS sessions
+      FROM sessions s
+      JOIN engagements e ON e.session_id = s.id ${dateFilter}
+      JOIN assets      a ON a.id = e.asset_id
+      WHERE a.organization_id = ${orgId}::uuid
+        ${trackFilter}
+      GROUP BY 1
+      ORDER BY sessions DESC
+    `)
+    return Array.from(res) as CampaignRow[]
+  }
+  const campaignSourceData   = await campaignBreakdownBy('utm_source')
+  const campaignMediumData   = await campaignBreakdownBy('utm_medium')
+  const campaignCampaignData = await campaignBreakdownBy('utm_campaign')
 
   // All tracks in the org, for the track-picker filter.
   const allTracks = await db.select({ id: tracks.id, title: tracks.title })
@@ -557,6 +562,37 @@ export default async function AnalyticsDashboard({
         </div>
       </div>
 
+      {/* Campaign breakdown — clicks that landed on tracks, by UTM source/medium/campaign */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Campaign Sources</CardTitle>
+            <p className="text-xs text-muted-foreground">Sessions by <code>utm_source</code>.</p>
+          </CardHeader>
+          <CardContent>
+            <CampaignDonut data={campaignSourceData} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Campaign Mediums</CardTitle>
+            <p className="text-xs text-muted-foreground">Sessions by <code>utm_medium</code>.</p>
+          </CardHeader>
+          <CardContent>
+            <CampaignDonut data={campaignMediumData} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Campaigns</CardTitle>
+            <p className="text-xs text-muted-foreground">Sessions by <code>utm_campaign</code>.</p>
+          </CardHeader>
+          <CardContent>
+            <CampaignDonut data={campaignCampaignData} />
+          </CardContent>
+        </Card>
+      </div>
+
       <AnalyticsTables
         visitors={topVisitors}
         accounts={topAccounts}
@@ -604,16 +640,6 @@ export default async function AnalyticsDashboard({
         </Card>
       </div>
 
-      {/* Row 5: Campaign sources donut — clicks that landed on tracks, by UTM source */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Campaign Sources</CardTitle>
-          <p className="text-xs text-muted-foreground">Sessions landing on tracks, broken down by <code>utm_source</code>.</p>
-        </CardHeader>
-        <CardContent>
-          <CampaignDonut data={campaignData} />
-        </CardContent>
-      </Card>
     </div>
   )
 }

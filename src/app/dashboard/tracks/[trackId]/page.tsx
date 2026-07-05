@@ -2,6 +2,7 @@ import { db } from '@/db'
 import { assets, tracks, trackAssets, organizations } from '@/db/schema'
 import { eq, desc, asc } from 'drizzle-orm'
 import { TrackBuilder } from '@/components/TrackBuilder'
+import { CopyUrlButton } from '@/components/CopyUrlButton'
 import Link from 'next/link'
 import { ChevronLeft, ExternalLink } from 'lucide-react'
 import { notFound } from 'next/navigation'
@@ -56,15 +57,18 @@ export default async function EditTrackPage({
             Back to Tracks
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">Edit Track</h1>
-          <Link
-            href={`/t/${org?.slug}/${track.slug}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 mt-1 text-sm text-primary hover:underline"
-          >
-            /t/{org?.slug}/{track.slug}
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Link>
+          <div className="flex items-center gap-3 mt-1">
+            <Link
+              href={`/t/${org?.slug}/${track.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            >
+              /t/{org?.slug}/{track.slug}
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Link>
+            <CopyUrlButton path={`/t/${org?.slug}/${track.slug}`} />
+          </div>
         </div>
         <form action={deleteTrack.bind(null, trackId)}>
           <Button type="submit" variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
@@ -78,6 +82,7 @@ export default async function EditTrackPage({
         initialTrack={{
           id: track.id,
           title: track.title,
+          externalTitle: track.externalTitle,
           layout: track.layout,
           status: track.status,
           assetIds,

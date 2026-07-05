@@ -1,6 +1,6 @@
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import { db } from '@/db'
-import { organizations, tracks, trackAssets, assets, sessions, visitors, leads } from '@/db/schema'
+import { organizations, tracks, trackAssets, assets, sessions, visitors, leads, trackSlugRedirects } from '@/db/schema'
 import { eq, and, asc, desc } from 'drizzle-orm'
 import { cookies, headers } from 'next/headers'
 import TrackViewer from './TrackViewer'
@@ -53,6 +53,26 @@ type TrackTheme = {
   faviconUrl?: string | null
 }
 
+// Visitor-facing name — falls back to the internal-only `title` until an
+// admin sets one.
+function resolveExternalTitle(track: { title: string; externalTitle: string | null }): string {
+  return track.externalTitle?.trim() || track.title
+}
+
+// A track's slug changes when its external title changes (see updateTrack in
+// dashboard/tracks/actions.ts) — look up the CURRENT slug for a since-renamed
+// track so an old shared link still resolves instead of 404ing.
+async function findCurrentSlugForOldSlug(orgId: string, oldSlug: string): Promise<string | null> {
+  const [redirect] = await db.select({ trackId: trackSlugRedirects.trackId })
+    .from(trackSlugRedirects)
+    .where(and(eq(trackSlugRedirects.organizationId, orgId), eq(trackSlugRedirects.oldSlug, oldSlug)))
+    .limit(1)
+  if (!redirect) return null
+
+  const [track] = await db.select({ slug: tracks.slug }).from(tracks).where(eq(tracks.id, redirect.trackId))
+  return track?.slug ?? null
+}
+
 export async function generateMetadata({
   params,
   searchParams,
@@ -66,12 +86,21 @@ export async function generateMetadata({
   const [org] = await db.select().from(organizations).where(eq(organizations.slug, orgSlug))
   if (!org) return { title: 'Content Track' }
 
-  const [track] = await db.select().from(tracks)
+  let [track] = await db.select().from(tracks)
     .where(and(eq(tracks.organizationId, org.id), eq(tracks.slug, trackSlug)))
+  if (!track) {
+    // Shared link uses an old (pre-rename) slug — best-effort so the social
+    // preview still shows the right title/image before the redirect below fires.
+    const currentSlug = await findCurrentSlugForOldSlug(org.id, trackSlug)
+    if (currentSlug) {
+      ;[track] = await db.select().from(tracks)
+        .where(and(eq(tracks.organizationId, org.id), eq(tracks.slug, currentSlug)))
+    }
+  }
   if (!track) return { title: 'Content Track' }
 
   const theme = (track.themeJson as TrackTheme | null) ?? null
-  const trackTitle = theme?.seoTitle?.trim() || `${track.title} | ${org.name}`
+  const trackTitle = theme?.seoTitle?.trim() || `${resolveExternalTitle(track)} | ${org.name}`
   const favicon = theme?.faviconUrl?.trim() || undefined
 
   // Resolve specific asset for OG metadata when ?asset=N is present
@@ -90,7 +119,7 @@ export async function generateMetadata({
   const currentAsset = sortedAssets[Math.min(assetPosition, sortedAssets.length - 1)]
 
   if (currentAsset) {
-    ogTitle = `${currentAsset.title} | ${track.title}`
+    ogTitle = `${currentAsset.title} | ${resolveExternalTitle(track)}`
     ogImage = currentAsset.thumbnailUrl ?? undefined
     ogDescription = currentAsset.description ?? undefined
   }
@@ -143,7 +172,18 @@ export default async function PublicTrackPage({
   // Fetch track
   const trackResults = await db.select().from(tracks)
     .where(and(eq(tracks.organizationId, org.id), eq(tracks.slug, trackSlug)))
-  if (!trackResults.length) notFound()
+  if (!trackResults.length) {
+    // Slug may have changed (external title renamed) — send old links to the
+    // current URL instead of 404ing, query string (utm/email/asset) intact.
+    const currentSlug = await findCurrentSlugForOldSlug(org.id, trackSlug)
+    if (currentSlug) {
+      const qs = new URLSearchParams(
+        Object.entries(sp).filter(([, v]) => typeof v === 'string') as [string, string][]
+      ).toString()
+      permanentRedirect(`/t/${orgSlug}/${currentSlug}${qs ? `?${qs}` : ''}`)
+    }
+    notFound()
+  }
   const track = trackResults[0]
 
   // Fetch assets via join
@@ -280,7 +320,7 @@ export default async function PublicTrackPage({
       // Apply theme variables if any (e.g. from track.themeJson)
     }}>
       <TrackViewer
-        track={track}
+        track={{ ...track, title: resolveExternalTitle(track) }}
         assets={sortedAssets as any[]}
         org={{ id: org.id, name: org.name }}
         sessionId={sessionId}

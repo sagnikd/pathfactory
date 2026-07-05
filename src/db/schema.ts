@@ -73,6 +73,9 @@ export const tracks = pgTable("tracks", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
+  // Public-facing name — what visitors, the chat assistant, and search
+  // engines see. Falls back to `title` (the internal-only label) when unset.
+  externalTitle: text("external_title"),
   slug: text("slug").notNull(),
   layout: layoutEnum("layout").default("binge").notNull(),
   themeJson: jsonb("theme_json"),
@@ -83,6 +86,20 @@ export const tracks = pgTable("tracks", {
 }, (table) => {
   return {
     orgSlugUnique: uniqueIndex("org_slug_idx").on(table.organizationId, table.slug),
+  };
+});
+
+// TrackSlugRedirect — remembers a track's previous slug(s) so a URL doesn't
+// break when the external title (and therefore the slug) changes.
+export const trackSlugRedirects = pgTable("track_slug_redirects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  oldSlug: text("old_slug").notNull(),
+  trackId: uuid("track_id").references(() => tracks.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    orgOldSlugUnique: uniqueIndex("org_old_slug_idx").on(table.organizationId, table.oldSlug),
   };
 });
 

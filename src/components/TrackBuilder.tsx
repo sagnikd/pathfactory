@@ -33,6 +33,7 @@ type AssetOverride = { displayTitle?: string; subCopy?: string }
 type TrackData = {
   id?: string
   title: string
+  externalTitle?: string | null
   layout: 'binge' | 'hub' | 'single'
   status: 'draft' | 'published'
   assetIds: string[]
@@ -92,6 +93,7 @@ export function TrackBuilder({
   initialTrack?: TrackData
 }) {
   const [title, setTitle] = useState(initialTrack?.title ?? '')
+  const [externalTitle, setExternalTitle] = useState(initialTrack?.externalTitle ?? '')
   const [layout, setLayout] = useState<TrackData['layout']>(initialTrack?.layout ?? 'binge')
   const [status, setStatus] = useState<TrackData['status']>(initialTrack?.status ?? 'draft')
   const [selectedIds, setSelectedIds] = useState<string[]>(initialTrack?.assetIds ?? [])
@@ -282,9 +284,9 @@ export function TrackBuilder({
     }))
     startTransition(async () => {
       if (initialTrack?.id) {
-        await updateTrack(initialTrack.id, { title, layout, status }, assetEntries, gateConfigJson, themeJson)
+        await updateTrack(initialTrack.id, { title, externalTitle, layout, status }, assetEntries, gateConfigJson, themeJson)
       } else {
-        await createTrack(orgId, { title, layout, status }, assetEntries, gateConfigJson, themeJson)
+        await createTrack(orgId, { title, externalTitle, layout, status }, assetEntries, gateConfigJson, themeJson)
       }
     })
   }
@@ -292,18 +294,34 @@ export function TrackBuilder({
   return (
     <div className="space-y-6">
       {/* Header bar */}
-      <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-        <div className="flex-1 space-y-1.5">
-          <Label htmlFor="track-title">Track title</Label>
-          <Input
-            id="track-title"
-            placeholder="e.g. Getting Started with Product X"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="text-base h-11"
-          />
+      <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="track-title">Internal track title</Label>
+            <Input
+              id="track-title"
+              placeholder="e.g. Getting Started with Product X"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="text-base h-11"
+            />
+            <p className="text-xs text-muted-foreground">For your team only — shown in the dashboard, never to visitors.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="track-external-title">External track title</Label>
+            <Input
+              id="track-external-title"
+              placeholder={title || 'e.g. Getting Started with Product X'}
+              value={externalTitle}
+              onChange={(e) => setExternalTitle(e.target.value)}
+              className="text-base h-11"
+            />
+            <p className="text-xs text-muted-foreground">
+              Shown to visitors — the live page, chat assistant, and search results. Leave blank to use the internal title. Changing this updates the track&apos;s URL; the old link keeps working.
+            </p>
+          </div>
         </div>
-        <div className="flex gap-3 items-end">
+        <div className="flex gap-3">
           <div className="space-y-1.5">
             <Label>Layout</Label>
             <Select value={layout} onValueChange={(v) => setLayout(v as typeof layout)}>
@@ -329,10 +347,13 @@ export function TrackBuilder({
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={handleSave} disabled={isPending || !title.trim()} className="h-11 px-6">
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {initialTrack?.id ? 'Save changes' : 'Create track'}
-          </Button>
+          <div className="space-y-1.5">
+            <Label className="invisible">Save</Label>
+            <Button onClick={handleSave} disabled={isPending || !title.trim()} className="h-11 px-6">
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {initialTrack?.id ? 'Save changes' : 'Create track'}
+            </Button>
+          </div>
         </div>
       </div>
 

@@ -242,6 +242,7 @@ export async function fetchTrackContext(trackId: string): Promise<TrackContext |
     .select({
       id: tracks.id,
       title: tracks.title,
+      externalTitle: tracks.externalTitle,
       slug: tracks.slug,
       layout: tracks.layout,
       themeJson: tracks.themeJson,
@@ -296,7 +297,9 @@ export async function fetchTrackContext(trackId: string): Promise<TrackContext |
   return {
     track: {
       id: trackRow.id,
-      title: trackRow.title,
+      // Chat is visitor-facing — use the external (public) name, not the
+      // internal admin-only label.
+      title: trackRow.externalTitle?.trim() || trackRow.title,
       slug: trackRow.slug,
       layout: trackRow.layout,
       themeJson: trackRow.themeJson,
@@ -384,6 +387,20 @@ function baselineIntelligenceRules(meetingConfigured: boolean): string[] {
   ]
 }
 
+// Repeated as the LAST thing the model reads, right before it must respond —
+// models weight instructions closer to generation more heavily, and this is
+// specifically the failure mode admins hit with multi-step qualification
+// flows (ask industry → visitor clicks an option chip → model re-asks the
+// same question instead of advancing), so it earns a dedicated, concrete
+// checklist rather than relying on the general "don't re-ask" rule above
+// being noticed among a long persona/asset-content prompt.
+const FINAL_STATE_CHECK = [
+  '',
+  'BEFORE YOU RESPOND — re-read the visitor\'s most recent message against your own immediately preceding message:',
+  '- If your previous message asked a single question (open-ended, or offering clickable options) and the visitor\'s new message is a plausible answer to it — a word/phrase matching one of the options you offered, or any direct reply to what you asked — treat that question as answered. Do not ask it again in any form. Move on to the next step of your flow (or the next thing worth asking/telling them).',
+  '- This applies even if their answer is terse (e.g. just "Insurance" or "CMO") — terse is still an answer, not a non-answer.',
+]
+
 export async function buildSystemPrompt(
   track: Track,
   trackAssets: Asset[],
@@ -452,6 +469,7 @@ export async function buildSystemPrompt(
       '- Never fabricate outcome stats, customer names, or claims not present in the asset data above.',
       '- Stay on the topic of this track and its assets; redirect anything unrelated back to the track.',
       ...baselineIntelligenceRules(meetingConfigured),
+      ...FINAL_STATE_CHECK,
       ...JSON_OUTPUT_INSTRUCTIONS,
     ]
       .join('\n')
@@ -479,6 +497,7 @@ export async function buildSystemPrompt(
     'EXAMPLES of off-topic questions you MUST redirect (do NOT answer them): "what is the weather", "560062 pin code", "who won the world cup", "write me code", "what is 2+2", "tell me about Microsoft".',
     `For the off-topic ones, your entire reply is: "${redirectLine}"`,
     ...baselineIntelligenceRules(meetingConfigured),
+    ...FINAL_STATE_CHECK,
     ...JSON_OUTPUT_INSTRUCTIONS,
   ]
     .join('\n')

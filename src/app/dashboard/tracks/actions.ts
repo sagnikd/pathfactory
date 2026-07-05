@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { db } from '@/db'
-import { tracks, trackAssets, assets } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { tracks, trackAssets, assets, trackSlugRedirects } from '@/db/schema'
+import { eq, and } from 'drizzle-orm'
 import * as cheerio from 'cheerio'
 
 function extractYouTubeId(url: string): string | null {
@@ -61,20 +61,38 @@ function slugify(text: string) {
     .substring(0, 64)
 }
 
+// Slugs only need to be unique per-org (see org_slug_idx) — a random suffix
+// makes a collision astronomically unlikely, but check anyway rather than
+// trust it blindly, same defensive style used for visitor fingerprint races.
+async function generateUniqueSlug(orgId: string, name: string, excludeTrackId?: string): Promise<string> {
+  const base = slugify(name)
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = base + '-' + Math.random().toString(36).substring(2, 6)
+    const existing = await db.select({ id: tracks.id }).from(tracks)
+      .where(and(eq(tracks.organizationId, orgId), eq(tracks.slug, candidate)))
+      .limit(1)
+    if (!existing.length || existing[0].id === excludeTrackId) return candidate
+  }
+  // Vanishingly unlikely fallback — timestamp guarantees uniqueness.
+  return `${base}-${Date.now().toString(36)}`
+}
+
 type AssetEntry = { assetId: string; displayTitle?: string | null; subCopy?: string | null }
 
 export async function createTrack(
   orgId: string,
-  data: { title: string; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
+  data: { title: string; externalTitle?: string | null; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
   assetEntries: AssetEntry[],
   gateConfigJson?: object | null,
   themeJson?: object | null
 ) {
-  const slug = slugify(data.title) + '-' + Math.random().toString(36).substring(2, 6)
+  const externalTitle = data.externalTitle?.trim() || null
+  const slug = await generateUniqueSlug(orgId, externalTitle || data.title)
 
   const [track] = await db.insert(tracks).values({
     organizationId: orgId,
     title: data.title,
+    externalTitle,
     slug,
     layout: data.layout,
     status: data.status,
@@ -100,14 +118,39 @@ export async function createTrack(
 
 export async function updateTrack(
   trackId: string,
-  data: { title: string; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
+  data: { title: string; externalTitle?: string | null; layout: 'binge' | 'hub' | 'single'; status: 'draft' | 'published' },
   assetEntries: AssetEntry[],
   gateConfigJson?: object | null,
   themeJson?: object | null
 ) {
+  const [current] = await db.select({
+    slug: tracks.slug,
+    title: tracks.title,
+    externalTitle: tracks.externalTitle,
+    organizationId: tracks.organizationId,
+  }).from(tracks).where(eq(tracks.id, trackId))
+
+  const externalTitle = data.externalTitle?.trim() || null
+  let newSlug: string | undefined
+
+  if (current) {
+    const oldName = current.externalTitle?.trim() || current.title
+    const newName = externalTitle || data.title
+    if (oldName !== newName) {
+      newSlug = await generateUniqueSlug(current.organizationId, newName, trackId)
+      await db.insert(trackSlugRedirects).values({
+        organizationId: current.organizationId,
+        oldSlug: current.slug,
+        trackId,
+      })
+    }
+  }
+
   await db.update(tracks)
     .set({
       title: data.title,
+      externalTitle,
+      ...(newSlug ? { slug: newSlug } : {}),
       layout: data.layout,
       status: data.status,
       gateConfigJson: gateConfigJson ?? null,

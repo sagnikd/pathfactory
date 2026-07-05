@@ -30,6 +30,12 @@ type TrackThemeWithFavicon = {
   faviconUrl?: string | null
 }
 
+// Visitor-facing name — falls back to the internal-only `title` until an
+// admin sets one (mirrors src/app/t/[orgSlug]/[trackSlug]/page.tsx).
+function resolveExternalTitle(track: { title: string; externalTitle: string | null }): string {
+  return track.externalTitle?.trim() || track.title
+}
+
 function extractTags(metadataJson: unknown): string[] {
   if (!metadataJson || typeof metadataJson !== 'object') return []
   const maybeTags = (metadataJson as { tags?: unknown }).tags
@@ -108,7 +114,7 @@ export async function generateMetadata({
   const favicon = theme?.faviconUrl?.trim() || orgDefaultFavicon
 
   return {
-    title: theme?.seoTitle?.trim() || theme?.headline?.trim() || `${experience.title} | ${org.name}`,
+    title: theme?.seoTitle?.trim() || theme?.headline?.trim() || `${resolveExternalTitle(experience)} | ${org.name}`,
     icons: favicon ? { icon: favicon, shortcut: favicon, apple: favicon } : undefined,
   }
 }
@@ -134,7 +140,7 @@ export default async function PublicExperiencePage({
         orgSlug={org.slug}
         viewMode={theme?.viewMode ?? 'showcase'}
         hero={{
-          headline: theme?.headline?.trim() || experience.title,
+          headline: theme?.headline?.trim() || resolveExternalTitle(experience),
           subheadline: theme?.subheadline?.trim() || '',
           bannerImageUrl: theme?.bannerImageUrl?.trim() || null,
           ctaText: theme?.ctaText?.trim() || null,
@@ -170,16 +176,16 @@ export default async function PublicExperiencePage({
 
   const sections = selectedTracks.map((track) => ({
     id: track.id,
-    title: track.title,
+    title: resolveExternalTitle(track),
     slug: track.slug,
-    headline: theme?.sectionHeadlines?.[track.id]?.trim() || track.title,
+    headline: theme?.sectionHeadlines?.[track.id]?.trim() || resolveExternalTitle(track),
     assets: (assetsByTrack[track.id] ?? []).map((row) => ({
       ...row.asset,
       displayTitle: row.displayTitle ?? null,
       subCopy: row.subCopy ?? null,
       tags: extractTags(row.asset.metadataJson),
       trackId: track.id,
-      trackTitle: track.title,
+      trackTitle: resolveExternalTitle(track),
       trackSlug: track.slug,
     })),
   }))
@@ -194,7 +200,7 @@ export default async function PublicExperiencePage({
         orgSlug={org.slug}
         viewMode={theme?.viewMode ?? 'showcase'}
         hero={{
-          headline: theme?.headline?.trim() || experience.title,
+          headline: theme?.headline?.trim() || resolveExternalTitle(experience),
           subheadline: theme?.subheadline?.trim() || '',
           bannerImageUrl: theme?.bannerImageUrl?.trim() || null,
           ctaText: theme?.ctaText?.trim() || null,
