@@ -81,18 +81,20 @@ export async function POST(req: Request) {
       : BASE_PROMPT
 
     const model = process.env.OPENAI_IMAGE_MODEL?.trim() || 'dall-e-3'
+    const isDalle = model.startsWith('dall-e')
+    const reqBody: Record<string, unknown> = {
+      model,
+      prompt: fullPrompt.slice(0, 4000),
+      n: 1,
+      size: isDalle ? '1792x1024' : '1536x1024',
+      quality: isDalle ? 'hd' : 'high',
+    }
+    if (isDalle) reqBody.response_format = 'b64_json'
 
     const imageRes = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        prompt: fullPrompt.slice(0, 4000),
-        n: 1,
-        size: '1792x1024',
-        quality: 'hd',
-        response_format: 'b64_json',
-      }),
+      body: JSON.stringify(reqBody),
       signal: AbortSignal.timeout(55_000),
     })
 
