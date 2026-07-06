@@ -71,7 +71,9 @@ export default async function LeadsPage() {
     assetId: engagements.assetId,
     eventType: engagements.eventType,
     ts: engagements.ts,
-    assetTitle: assets.title
+    assetTitle: assets.title,
+    utmSource: sessions.utmSource,
+    utmMedium: sessions.utmMedium,
   })
   .from(visitors)
   .innerJoin(sessions, eq(visitors.id, sessions.visitorId))

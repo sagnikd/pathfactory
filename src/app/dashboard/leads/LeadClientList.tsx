@@ -240,20 +240,37 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
               </div>
             ) : (
               <div className="space-y-6 border-l-2 border-primary/20 ml-3 pl-4 pb-4 mt-2">
-                {selectedTimeline.map((event: any, idx: number) => (
-                  <div key={idx} className="relative">
-                    <div className="absolute -left-[1.35rem] w-3 h-3 bg-primary rounded-full mt-1.5 shadow-[0_0_0_4px_rgba(255,255,255,1)] dark:shadow-[0_0_0_4px_rgba(3,7,18,1)]" />
-                    <p className="text-sm font-medium leading-snug">
-                      <span className="capitalize">{event.eventType.replace('_', ' ')}</span> on <span className="font-semibold text-foreground/80">{event.assetTitle}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {format(new Date(event.ts), 'MMM d, h:mm a')}
-                      {event.dwellSeconds > 0 && (
-                        <span className="ml-1.5 text-muted-foreground/70">({formatDwell(event.dwellSeconds)})</span>
-                      )}
-                    </p>
-                  </div>
-                ))}
+                {(() => {
+                  const seenSessions = new Set<string>()
+                  return selectedTimeline.map((event: any, idx: number) => {
+                    const isFirstOfSession = !seenSessions.has(event.sessionId)
+                    if (isFirstOfSession) seenSessions.add(event.sessionId)
+                    const src = event.utmSource?.trim()
+                    const med = event.utmMedium?.trim()
+                    const sourceLabel = src
+                      ? [src, med].filter(Boolean).join(' / ')
+                      : null
+                    return (
+                      <div key={idx} className="relative">
+                        {isFirstOfSession && sourceLabel && (
+                          <span className="inline-flex items-center gap-1 mb-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wide">
+                            ↗ via {sourceLabel}
+                          </span>
+                        )}
+                        <div className="absolute -left-[1.35rem] w-3 h-3 bg-primary rounded-full mt-1.5 shadow-[0_0_0_4px_rgba(255,255,255,1)] dark:shadow-[0_0_0_4px_rgba(3,7,18,1)]" />
+                        <p className="text-sm font-medium leading-snug">
+                          <span className="capitalize">{event.eventType.replace('_', ' ')}</span> on <span className="font-semibold text-foreground/80">{event.assetTitle}</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {format(new Date(event.ts), 'MMM d, h:mm a')}
+                          {event.dwellSeconds > 0 && (
+                            <span className="ml-1.5 text-muted-foreground/70">({formatDwell(event.dwellSeconds)})</span>
+                          )}
+                        </p>
+                      </div>
+                    )
+                  })
+                })()}
                 {selectedTimeline.length === 0 && <p className="text-sm text-muted-foreground">No events found.</p>}
               </div>
             )}
