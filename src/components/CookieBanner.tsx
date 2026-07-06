@@ -9,8 +9,11 @@ const CONSENT_TTL_SECONDS = CONSENT_TTL_MS / 1000
 
 // Written as a real cookie (not just localStorage) so middleware.ts can read
 // it server-side and skip setting the visitorId tracking cookie on rejection.
+// Acceptance is persisted for 6 months; rejection is a session cookie only so
+// the banner re-appears on the visitor's next browser session.
 function setConsentCookie(value: 'accepted' | 'rejected') {
-  document.cookie = `${CONSENT_COOKIE}=${value}; path=/; max-age=${CONSENT_TTL_SECONDS}; SameSite=Lax`
+  const maxAge = value === 'accepted' ? `; max-age=${CONSENT_TTL_SECONDS}` : ''
+  document.cookie = `${CONSENT_COOKIE}=${value}; path=/${maxAge}; SameSite=Lax`
 }
 
 export function CookieBanner() {
@@ -29,7 +32,6 @@ export function CookieBanner() {
   }
 
   function reject() {
-    localStorage.setItem(CONSENT_KEY, String(Date.now()))
     setConsentCookie('rejected')
     // Remove the non-essential tracking cookie immediately rather than
     // waiting for it to expire naturally.
