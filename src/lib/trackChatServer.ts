@@ -366,8 +366,10 @@ const JSON_OUTPUT_INSTRUCTIONS = [
   '{"answer": "your reply text shown to the visitor", "suggestedQuestions": ["short clickable option 1", "short clickable option 2", ...]}',
   '- "answer" is required plain text (no markdown).',
   '- The full question you are asking the visitor must always be written out in "answer" — never rely on "suggestedQuestions" alone to convey what you are asking; it only supplies clickable shortcuts for a question already stated in "answer".',
-  '- "suggestedQuestions" is optional. Use it ONLY for a closed set of valid, clickable answers to a multiple-choice question you just asked (e.g. a list of industries or roles) — each entry must be a complete answer someone could click as-is.',
-  '- Never use "suggestedQuestions" for open-ended questions expecting free text (name, email, company, or any other written answer) — asking someone their name and offering clickable category labels like "First name" or "Nickname" is wrong; leave it as an empty array instead and let them type their answer.',
+  '- "suggestedQuestions" is optional. Use it ONLY for a closed set of valid, clickable ANSWERS to a multiple-choice question you just asked (e.g. "Insurance", "Financial Services", "Healthcare" after asking their industry) — each entry must be a short answer the visitor could click as-is.',
+  '- EVERY entry in "suggestedQuestions" must be an ANSWER (visitor\'s words), never a question. If an entry ends with "?" it is wrong — remove it. "Which industry are you in?" is wrong; "Insurance" is right.',
+  '- Never use "suggestedQuestions" for open-ended questions expecting free text (name, email, company) — leave it as an empty array and let them type their answer.',
+  '- Do NOT put follow-up questions or conversation starters in "suggestedQuestions". If you have not just asked a closed multiple-choice question, set "suggestedQuestions" to [].',
   '- Never wrap the JSON in code fences. Output ONLY the JSON object.',
 ]
 

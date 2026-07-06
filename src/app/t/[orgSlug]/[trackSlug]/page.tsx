@@ -160,7 +160,7 @@ export default async function PublicTrackPage({
   searchParams,
 }: {
   params: Promise<{ orgSlug: string, trackSlug: string }>
-  searchParams: Promise<{ asset?: string; assetId?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string; email?: string; fname?: string }>
+  searchParams: Promise<{ asset?: string; assetId?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string; utm_term?: string; utm_content?: string; email?: string; fname?: string }>
 }) {
   const { orgSlug, trackSlug } = await params
   const sp = await searchParams
@@ -171,11 +171,12 @@ export default async function PublicTrackPage({
   const requestedAssetId = sp.assetId ?? null
 
   // Personalized email-campaign link — e.g. &email=s.d@x.com&fname=Sagnik.
-  // Trusted the same way any ESP-style tracking link is: only the real
-  // recipient's inbox should ever have this URL.
-  const rawUrlEmail = sp.email?.trim() || null
+  // Some ESPs encode the recipient email in utm_term and first name in utm_content
+  // instead of dedicated params (Pardot/Eloqua convention). Accept both forms:
+  // explicit email/fname take priority; utm_term/utm_content are fallbacks.
+  const rawUrlEmail = sp.email?.trim() || sp.utm_term?.trim() || null
   const urlEmail = rawUrlEmail && EMAIL_RE.test(rawUrlEmail) ? rawUrlEmail : null
-  const urlFname = sp.fname?.trim() || null
+  const urlFname = sp.fname?.trim() || sp.utm_content?.trim() || null
 
   // Fetch org
   const orgs = await db.select().from(organizations).where(eq(organizations.slug, orgSlug))
