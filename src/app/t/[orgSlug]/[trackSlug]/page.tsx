@@ -21,18 +21,27 @@ async function identifyVisitorFromUrl(
   visitor: { id: string; capturedEmail: string | null },
   email: string,
   fname: string | null,
-  trackId: string
+  trackId: string,
+  utmSource: string | null,
+  utmMedium: string | null,
+  utmCampaign: string | null,
 ) {
   const existing = await db.select({ id: leads.id }).from(leads)
     .where(and(eq(leads.visitorId, visitor.id), eq(leads.email, email))).limit(1)
   if (existing.length) return
 
   const scoreMap = await computeLeadScores([visitor.id])
+  const formFields: Record<string, string> = { source: 'email_campaign' }
+  if (fname)       formFields.firstName    = fname
+  if (utmSource)   formFields.utm_source   = utmSource
+  if (utmMedium)   formFields.utm_medium   = utmMedium
+  if (utmCampaign) formFields.utm_campaign = utmCampaign
+
   const [lead] = await db.insert(leads).values({
     visitorId: visitor.id,
     trackId,
     email,
-    formResponsesJson: fname ? { firstName: fname, source: 'email_campaign' } : { source: 'email_campaign' },
+    formResponsesJson: formFields,
     score: scoreMap[visitor.id]?.total ?? 0,
   }).returning({ id: leads.id })
 
@@ -294,7 +303,11 @@ export default async function PublicTrackPage({
       // and let the URL-supplied name win (it's fresher/more specific to this
       // exact click than whatever the DB lookup above produced, if anything).
       if (urlEmail) {
-        await identifyVisitorFromUrl(visitor, urlEmail, urlFname, track.id)
+        await identifyVisitorFromUrl(visitor, urlEmail, urlFname, track.id,
+          sp.utm_source?.trim() || null,
+          sp.utm_medium?.trim() || null,
+          sp.utm_campaign?.trim() || null,
+        )
         isKnownVisitor = true
         returningVisitorName = urlFname || returningVisitorName
       }

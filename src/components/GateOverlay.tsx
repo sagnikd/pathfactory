@@ -411,10 +411,20 @@ export function GateOverlay({ trackId, visitorId, gateConfig, bypassGate = false
         ?? document.cookie.split('; ').find(c => c.startsWith('visitorId='))?.split('=')[1]
         ?? getCurrentVisitorId()
         ?? null
+      // Enrich with UTM params from the current URL so source/medium/campaign
+      // are persisted alongside the form data.
+      const urlParams = new URLSearchParams(window.location.search)
+      const utmFields: Record<string, string> = {}
+      for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']) {
+        const val = urlParams.get(key)?.trim()
+        if (val) utmFields[key] = val
+      }
+      const enrichedValues = { ...utmFields, ...values }
+
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trackId, visitorId: effectiveVisitorId, fields: values }),
+        body: JSON.stringify({ trackId, visitorId: effectiveVisitorId, fields: enrichedValues }),
       })
       if (res.ok) {
         localStorage.setItem(`unlocked_${trackId}`, 'true')

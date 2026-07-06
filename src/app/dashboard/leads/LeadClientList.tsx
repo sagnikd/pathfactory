@@ -54,14 +54,39 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
 
   // Friendly column labels for known field names
   const FIELD_LABELS: Record<string, string> = {
-    email:     'Email',
-    firstName: 'First Name',
-    lastName:  'Last Name',
-    company:   'Company',
-    jobTitle:  'Job Title',
-    phone:     'Phone',
-    country:   'Country',
-    city:      'City',
+    email:        'Email',
+    firstName:    'First Name',
+    lastName:     'Last Name',
+    company:      'Company',
+    jobTitle:     'Job Title',
+    phone:        'Phone',
+    country:      'Country',
+    city:         'City',
+    industry:     'Industry',
+    source:       'Source',
+    utm_source:   'Source',
+    utm_medium:   'Medium',
+    utm_campaign: 'Campaign',
+  }
+
+  // Strip random short suffixes appended by some form builders (e.g. "industry_g2uz" → "industry").
+  // A suffix is 4-8 lowercase alphanum chars after the last underscore.
+  function cleanFieldKey(key: string): string {
+    const m = /^(.+?)_[a-z0-9]{4,8}$/.exec(key)
+    return m ? m[1] : key
+  }
+
+  // Consent / legal checkbox fields tend to have extremely long keys that start
+  // with "i_am_" or "i_agree_" — they're useful for compliance but not for the
+  // inline lead card summary. Skip them there (they are still in the CSV export).
+  function isConsentField(key: string): boolean {
+    return /^i_(am|agree|confirm|acknowledge)_/i.test(key)
+  }
+
+  // Human-readable label for any field key.
+  function fieldLabel(rawKey: string): string {
+    const key = cleanFieldKey(rawKey)
+    return FIELD_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 
   // Wrap a cell value in quotes if it contains commas, quotes or newlines
@@ -142,10 +167,11 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
                 const scoreData = liveScores[lead.visitorId]
                 const score     = scoreData?.total ?? lead.score ?? 0
 
-                // Extra form fields to show inline
+                // Extra form fields to show inline — skip email (shown as heading),
+                // consent checkbox blobs, and empty values.
                 const extraFields = Object.entries(fields)
-                  .filter(([k, v]) => k !== 'email' && v)
-                  .map(([k, v]) => ({ label: FIELD_LABELS[k] || k, value: v }))
+                  .filter(([k, v]) => k !== 'email' && v && !isConsentField(k))
+                  .map(([k, v]) => ({ label: fieldLabel(k), value: v }))
 
                 // Score colour: green ≥60, amber 30-59, muted <30
                 const scoreColour =
