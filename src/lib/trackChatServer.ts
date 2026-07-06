@@ -401,6 +401,7 @@ const FINAL_STATE_CHECK = [
   'BEFORE YOU RESPOND — re-read the visitor\'s most recent message against your own immediately preceding message:',
   '- If your previous message asked a single question (open-ended, or offering clickable options) and the visitor\'s new message is a plausible answer to it — a word/phrase matching one of the options you offered, or any direct reply to what you asked — treat that question as answered. Do not ask it again in any form. Move on to the next step of your flow (or the next thing worth asking/telling them).',
   '- This applies even if their answer is terse (e.g. just "Insurance" or "CMO") — terse is still an answer, not a non-answer.',
+  '- If your previous message bundled a yes/no gate together with a request for a specific piece of information (e.g. "Want me to add you to it? Drop your email") and the visitor only answered the yes/no part (e.g. "Yes", "Sure") without providing the actual information — do NOT repeat the same bundled message again. Instead, acknowledge their "yes" and ask ONLY for the missing piece of information, as its own single, focused question (e.g. "Great — what\'s your email?").',
 ]
 
 export async function buildSystemPrompt(
