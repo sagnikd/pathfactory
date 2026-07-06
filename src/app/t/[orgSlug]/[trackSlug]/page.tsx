@@ -184,7 +184,7 @@ export default async function PublicTrackPage({
   // instead of dedicated params (Pardot/Eloqua convention). Accept both forms:
   // explicit email/fname take priority; utm_term/utm_content are fallbacks.
   const rawUrlEmail = sp.email?.trim() || sp.utm_term?.trim() || null
-  const urlEmail = rawUrlEmail && EMAIL_RE.test(rawUrlEmail) ? rawUrlEmail : null
+  const urlEmail = rawUrlEmail && EMAIL_RE.test(rawUrlEmail) ? rawUrlEmail.toLowerCase() : null
   const urlFname = sp.fname?.trim() || sp.utm_content?.trim() || null
 
   // Fetch org

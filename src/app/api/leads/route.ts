@@ -17,7 +17,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
     }
 
-    const email: string = (fields as Record<string, string>).email ?? ''
+    // Normalize case so "Johnson@x.com" and "johnson@x.com" resolve to the
+    // same lead instead of creating duplicates.
+    const email: string = ((fields as Record<string, string>).email ?? '').trim().toLowerCase()
     if (!email) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 })
     }
