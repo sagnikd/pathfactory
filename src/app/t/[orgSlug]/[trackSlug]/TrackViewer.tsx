@@ -35,6 +35,7 @@ type TrackViewerProps = {
     title: string
     displayTitle?: string | null
     subCopy?: string | null
+    description?: string | null
     type?: 'pdf' | 'video' | 'article' | 'image'
     thumbnailUrl?: string | null
     sourceUrl?: string | null
@@ -245,9 +246,63 @@ export default function TrackViewer({
 
   const progress = ((effectiveIndex + 1) / assets.length) * 100
 
-  // Computed post-mount to avoid an SSR/CSR hydration mismatch (server has no window).
-  const [shareUrl, setShareUrl] = useState('')
-  useEffect(() => { setShareUrl(window.location.href) }, [])
+  // Base URL for the CURRENTLY viewed asset — recomputed on navigation so
+  // sharing always points at what's on screen, not whatever asset was open
+  // when the page first loaded. Computed post-mount to avoid an SSR/CSR
+  // hydration mismatch (server has no window).
+  const [baseShareUrl, setBaseShareUrl] = useState('')
+  useEffect(() => {
+    const url = new URL(window.location.origin + window.location.pathname)
+    if (layout !== 'single') url.searchParams.set('asset', String(effectiveIndex + 1))
+    setBaseShareUrl(url.toString())
+  }, [effectiveIndex, layout])
+
+  // Tag each share channel with its own utm_source/medium so clicks that
+  // come back through a shared link are attributed correctly.
+  function shareUrlFor(medium: string): string {
+    if (!baseShareUrl) return ''
+    const url = new URL(baseShareUrl)
+    url.searchParams.set('utm_source', 'share')
+    url.searchParams.set('utm_medium', medium)
+    return url.toString()
+  }
+
+  const [captionCopied, setCaptionCopied] = useState(false)
+
+  // LinkedIn's share dialog only ever pulls the URL's OG tags for the link
+  // preview — it has no supported way to prefill the post's text anymore.
+  // Copy a ready-to-paste caption to the clipboard as the next best thing.
+  function buildShareCaption(): string {
+    const title = currentAsset?.displayTitle ?? currentAsset?.title ?? track.title
+    const desc = currentAsset?.description?.trim()
+    const hook = desc ? desc.slice(0, 220) : `A must-read from ${org.name} on ${title}.`
+    return `${title}\n\n${hook}\n\nSharing this because I think it's worth your time.`
+  }
+
+  function linkedInShareHref(): string {
+    const url = shareUrlFor('linkedin')
+    return url ? `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}` : ''
+  }
+
+  function facebookShareHref(): string {
+    const url = shareUrlFor('facebook')
+    return url ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}` : ''
+  }
+
+  function handleLinkedInShare(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault()
+    const href = linkedInShareHref()
+    if (!href) return
+    // Open synchronously (in the same tick as the click) so the popup isn't
+    // blocked — browsers revoke that allowance once you `await` first.
+    window.open(href, '_blank', 'noopener,noreferrer')
+    navigator.clipboard?.writeText(buildShareCaption())
+      .then(() => {
+        setCaptionCopied(true)
+        setTimeout(() => setCaptionCopied(false), 4000)
+      })
+      .catch(() => {})
+  }
 
   // Matches AssetViewer's own PDF routing — an "article" asset whose sourceUrl
   // ends in .pdf is rendered (and thus downloadable) as a PDF too, not just
@@ -338,18 +393,25 @@ export default function TrackViewer({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={brand.logoUrl} alt={org.name} className="max-h-20 max-w-[220px] w-full object-contain" />
                 )}
-                <div className="flex items-center justify-center gap-2">
+                <div className="relative flex items-center justify-center gap-2">
                   <a
-                    href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
+                    href={linkedInShareHref()}
+                    onClick={handleLinkedInShare}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label="Share on LinkedIn"
+                    aria-label="Share on LinkedIn — copies a suggested caption to your clipboard"
+                    title="Copies a suggested caption to your clipboard, then opens LinkedIn"
                     className="w-8 h-8 rounded-md border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
                   >
                     <LinkedInIcon className="w-4 h-4" />
                   </a>
+                  {captionCopied && (
+                    <span className="absolute -bottom-6 left-0 right-0 text-center text-[10px] font-medium text-primary whitespace-nowrap">
+                      Caption copied — paste into your post!
+                    </span>
+                  )}
                   <a
-                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`}
+                    href={facebookShareHref()}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Share on Facebook"
