@@ -8,7 +8,7 @@ import { GateOverlay, type GateConfig } from '@/components/GateOverlay'
 import { clientGeoLookup } from '@/lib/geoLookup'
 import { TrackChatWidget } from '@/components/TrackChatWidget'
 import { getTrackChatConfig } from '@/lib/trackChatConfig'
-import { Download, Megaphone, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Download, Megaphone, ChevronLeft, ChevronRight, Mail } from 'lucide-react'
 
 function LinkedInIcon(props: { className?: string }) {
   return (
@@ -289,6 +289,17 @@ export default function TrackViewer({
     return url ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}` : ''
   }
 
+  // Unlike LinkedIn/Facebook, mailto: natively supports a prefilled body —
+  // no clipboard workaround needed here.
+  function mailtoShareHref(): string {
+    const url = shareUrlFor('email')
+    if (!url) return ''
+    const title = currentAsset?.displayTitle ?? currentAsset?.title ?? track.title
+    const subject = `Worth a look: ${title}`
+    const body = `${buildShareCaption()}\n\n${url}`
+    return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  }
+
   function handleLinkedInShare(e: React.MouseEvent<HTMLAnchorElement>) {
     e.preventDefault()
     const href = linkedInShareHref()
@@ -418,6 +429,14 @@ export default function TrackViewer({
                     className="w-8 h-8 rounded-md border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
                   >
                     <FacebookIcon className="w-4 h-4" />
+                  </a>
+                  <a
+                    href={mailtoShareHref()}
+                    aria-label="Share via email"
+                    title="Opens your email client with a suggested message"
+                    className="w-8 h-8 rounded-md border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                  >
+                    <Mail className="w-4 h-4" />
                   </a>
                   {downloadHref && (
                     <a
