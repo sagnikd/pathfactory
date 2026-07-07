@@ -51,8 +51,15 @@ function isCloudinaryPlayerUrl(url: string): boolean {
 
 function cleanTitle(raw: string, fallbackUrl: string): string {
   if (!raw) return titleFromUrl(fallbackUrl)
+  // Some CMSes (portal/portlet-based sites in particular) concatenate
+  // accessibility labels straight into the page <title> with no whitespace
+  // — e.g. "...MarketingHubsDisplay content menuDisplay portlet menua/icons/
+  // social/linkedin_filled..." — so a plain \s+ split misses the boundary.
+  // Cut at the first known junk marker regardless of surrounding whitespace.
+  const junkMarkerIndex = raw.search(/Display\s*(content|portlet)\s*menu|a\/icons\/social\//i)
+  const withoutJunk = junkMarkerIndex > 0 ? raw.slice(0, junkMarkerIndex) : raw
   // Strip everything after common nav separators injected by some CMSes
-  const cleaned = raw
+  const cleaned = withoutJunk
     .split(/\s*\|\s*|\s+menua\/|\s+menu[A-Z]|\s+-\s+[A-Z]{2,}/).shift()!
     .replace(/\s+/g, ' ')
     .trim()

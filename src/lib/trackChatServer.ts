@@ -39,6 +39,45 @@ async function extractPdfText(url: string): Promise<string> {
   }
 }
 
+// Generic webpage extraction for "article" assets that link to a live page
+// rather than a hosted PDF (e.g. a marketing landing page). Strips
+// nav/header/footer/script/nav-role elements first — a naive body.text()
+// otherwise pulls in menu labels, image alt text, and ARIA labels
+// (e.g. "Display portlet menu") interleaved with no separators.
+async function extractArticleText(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(12_000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PathwaysBot/1.0; +content-track-assistant)' },
+    })
+    if (!res.ok) return ''
+    const contentType = res.headers.get('content-type') ?? ''
+    if (!contentType.includes('html')) return ''
+    const html = await res.text()
+
+    const { load } = await import('cheerio')
+    const $ = load(html)
+    $('script, style, nav, header, footer, noscript, svg, button, iframe, form, [role="navigation"], [aria-hidden="true"]').remove()
+
+    // Prefer the main content region if the page marks one; otherwise fall
+    // back to the whole (now-stripped) body.
+    const root = $('main, article').first()
+    const scope = root.length > 0 ? root : $('body')
+
+    const text = scope
+      .find('h1, h2, h3, h4, p, li, blockquote, td, th, caption, figcaption')
+      .map((_, el) => $(el).text().trim())
+      .get()
+      .filter(Boolean)
+      .join('\n')
+
+    return text.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim().slice(0, 6000)
+  } catch (err) {
+    console.error('[article-extract] failed:', err)
+    return ''
+  }
+}
+
 // Build a fetch that egresses through a residential proxy, if configured.
 // YouTube blocks transcript requests from datacenter IPs (Netlify), so in
 // production we route them through a residential/rotating proxy via
@@ -117,6 +156,7 @@ async function extractAssetText(asset: Asset): Promise<string> {
   let text = ''
   if (asset.type === 'pdf' || isPdfUrl(url)) text = await extractPdfText(url)
   else if (youTubeId(url)) text = await extractYouTubeTranscript(url)
+  else if (asset.type === 'article') text = await extractArticleText(url)
 
   // 3. Live extraction failed — fall back to whatever is cached (even if stale).
   //    Better to serve an older/shorter transcript than nothing.
