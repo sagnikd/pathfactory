@@ -200,6 +200,41 @@ type AssistantPayload = {
   suggestedQuestions: string[]
 }
 
+// Safety net for when the model asks a specific closed-choice question in
+// "answer" but forgets to mirror those options into "suggestedQuestions"
+// (its own instructions ask for this, but compliance isn't guaranteed).
+// Pulls an embedded "email, SMS, push, or web?" style option list straight
+// out of the trailing question so the chips actually match what was asked.
+function extractOptionsFromQuestion(answer: string): string[] {
+  const trimmed = answer.trim()
+  if (!trimmed.endsWith('?')) return []
+
+  // Last question-ending clause — text after any prior ./!/? up to the final "?".
+  const lastClauseMatch = trimmed.match(/([^.?!]*\?)\s*$/)
+  const lastClause = lastClauseMatch ? lastClauseMatch[1] : trimmed
+
+  // Prefer text after a dash/colon introducing the list; else the whole clause.
+  // Greedy leading .* so it backtracks to the LAST such character (e.g. the
+  // em-dash before "email, SMS..."), not the first one it finds — a plain
+  // hyphen inside an earlier word like "Re-engagement" would otherwise win.
+  const introMatch = lastClause.match(/.*[-–—:]\s*(.+?)\?$/)
+  const optionsPart = (introMatch ? introMatch[1] : lastClause.replace(/\?$/, '')).trim()
+
+  const rawParts = optionsPart
+    .split(/,|\bor\b|\band\b/i)
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  // Only treat this as an option list if it looks like one: a handful of
+  // short labels, not a normal open-ended question that happens to have
+  // "and"/"or" in it (e.g. "What's your name and email?").
+  if (rawParts.length < 2 || rawParts.length > 6) return []
+  if (rawParts.some((p) => p.split(/\s+/).length > 3)) return []
+  if (rawParts.some((p) => /'|^(what|who|when|where|why|how|is|are|do|does|did|your|you)\b/i.test(p))) return []
+
+  return rawParts.slice(0, 5)
+}
+
 function parseAssistantPayload(
   rawText: string,
   context: TrackContext,
@@ -225,10 +260,17 @@ function parseAssistantPayload(
           .slice(0, 4)
       : []
 
-    return {
-      answer,
-      suggestedQuestions: rawSuggested.length > 0 ? rawSuggested : fallbackQuestions,
-    }
+    // If the model left suggestedQuestions empty but its own answer poses a
+    // specific question, generic "tell me more about this asset" chips are
+    // actively wrong here — try to recover the real options from the answer
+    // text; otherwise show no chips at all rather than a mismatched fallback.
+    const suggestedQuestions = rawSuggested.length > 0
+      ? rawSuggested
+      : answer.trim().endsWith('?')
+        ? extractOptionsFromQuestion(answer)
+        : fallbackQuestions
+
+    return { answer, suggestedQuestions }
   } catch {
     // Model sometimes wraps JSON in a markdown code fence despite instructions —
     // strip the fence and retry once before falling back to plain text.
