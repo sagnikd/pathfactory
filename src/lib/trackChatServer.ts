@@ -265,6 +265,76 @@ export async function summarizeForVisual(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Banner image generation, with fallback across models
+// ---------------------------------------------------------------------------
+
+// Tried in order after the configured/primary model. dall-e-3 is the known-
+// stable fallback (predates gpt-image-2, different param shape — see below).
+const IMAGE_MODEL_FALLBACK_CHAIN = ['gpt-image-2', 'dall-e-3']
+
+function buildImageRequestBody(model: string, prompt: string): Record<string, unknown> {
+  const isDalle = model.startsWith('dall-e')
+  const body: Record<string, unknown> = {
+    model,
+    prompt: prompt.slice(0, 4000),
+    n: 1,
+    size: isDalle ? '1792x1024' : '1536x1024',
+    quality: isDalle ? 'hd' : 'high',
+  }
+  // dall-e-3 requires an explicit response_format; newer image models
+  // (gpt-image-1/2) return b64_json by default and reject the param.
+  if (isDalle) body.response_format = 'b64_json'
+  return body
+}
+
+/**
+ * Generates a banner image, trying models in order until one succeeds.
+ * Primary model is OPENAI_IMAGE_MODEL if set, else gpt-image-2 — with
+ * dall-e-3 tried next on any failure (billing limit, deprecated model,
+ * rejected params, no image returned). Returns the raw PNG/JPEG bytes on
+ * success, or an error message on total failure across the whole chain.
+ */
+export async function generateBannerImage(
+  prompt: string
+): Promise<{ buffer: Buffer; model: string } | { error: string }> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey) return { error: 'Image generation not configured' }
+
+  const primary = process.env.OPENAI_IMAGE_MODEL?.trim() || IMAGE_MODEL_FALLBACK_CHAIN[0]
+  const chain = [primary, ...IMAGE_MODEL_FALLBACK_CHAIN.filter((m) => m !== primary)]
+
+  let lastError = 'Image generation failed'
+  for (const model of chain) {
+    try {
+      const res = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildImageRequestBody(model, prompt)),
+        signal: AbortSignal.timeout(55_000),
+      })
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        console.error(`[image-gen] ${model} failed:`, res.status, errText)
+        lastError = `Image generation failed (${model})`
+        continue
+      }
+      const data = (await res.json()) as { data?: Array<{ b64_json?: string }> }
+      const b64 = data.data?.[0]?.b64_json
+      if (!b64) {
+        console.error(`[image-gen] ${model} returned no image data`)
+        lastError = `No image returned (${model})`
+        continue
+      }
+      return { buffer: Buffer.from(b64, 'base64'), model }
+    } catch (err) {
+      console.error(`[image-gen] ${model} request failed:`, err)
+      lastError = `Image generation request failed (${model})`
+    }
+  }
+  return { error: lastError }
+}
+
 /**
  * Extract and cache an asset's transcript / text by id. Called at asset-creation
  * time (from the dashboard "add asset" actions) so the transcript is captured

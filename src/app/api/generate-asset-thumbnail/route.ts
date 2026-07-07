@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { db } from '@/db'
 import { assets } from '@/db/schema'
 import { eq } from 'drizzle-orm'
-import { extractAssetText, summarizeForVisual, type Asset } from '@/lib/trackChatServer'
+import { extractAssetText, summarizeForVisual, generateBannerImage, type Asset } from '@/lib/trackChatServer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -101,35 +101,12 @@ export async function POST(req: Request) {
       ? `${BASE_PROMPT}\n\nContent context for visual inspiration (do NOT render any of this as visible text in the image):\n${contextLines.join('\n')}`
       : BASE_PROMPT
 
-    const model = process.env.OPENAI_IMAGE_MODEL?.trim() || 'gpt-image-2'
-    const isDalle = model.startsWith('dall-e')
-    const reqBody: Record<string, unknown> = {
-      model,
-      prompt: fullPrompt.slice(0, 4000),
-      n: 1,
-      size: isDalle ? '1792x1024' : '1536x1024',
-      quality: isDalle ? 'hd' : 'high',
-    }
-    if (isDalle) reqBody.response_format = 'b64_json'
-
-    const imageRes = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(reqBody),
-      signal: AbortSignal.timeout(55_000),
-    })
-
-    if (!imageRes.ok) {
-      const errText = await imageRes.text().catch(() => '')
-      console.error('[generate-asset-thumbnail] OpenAI error:', imageRes.status, errText)
+    const result = await generateBannerImage(fullPrompt)
+    if ('error' in result) {
+      console.error('[generate-asset-thumbnail]', result.error)
       return NextResponse.json({ error: 'Image generation failed' }, { status: 502 })
     }
-
-    const imageData = await imageRes.json() as { data?: Array<{ b64_json?: string }> }
-    const b64 = imageData.data?.[0]?.b64_json
-    if (!b64) return NextResponse.json({ error: 'No image returned' }, { status: 502 })
-
-    const buffer = Buffer.from(b64, 'base64')
+    const { buffer } = result
     const path = `thumbnails/${assetId}/ai-generated.png`
 
     const { error: uploadError } = await supabase.storage
