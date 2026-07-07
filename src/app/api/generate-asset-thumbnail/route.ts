@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { db } from '@/db'
+import { assets } from '@/db/schema'
+import { eq } from 'drizzle-orm'
+import { extractAssetText, summarizeForVisual, type Asset } from '@/lib/trackChatServer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -72,15 +76,32 @@ export async function POST(req: Request) {
     const apiKey = process.env.OPENAI_API_KEY?.trim()
     if (!apiKey) return NextResponse.json({ error: 'Image generation not configured' }, { status: 503 })
 
+    // Document understanding: read the asset's actual content (PDF text,
+    // article body, or video transcript) and have gpt-5.4-mini distill it
+    // into a short visual brief, instead of handing the image model a bare
+    // title and tag list.
+    const [assetRow] = await db.select().from(assets).where(eq(assets.id, assetId)).limit(1)
+    let visualBrief = ''
+    if (assetRow) {
+      const fullText = await extractAssetText({ ...assetRow, displayTitle: null, subCopy: null } as Asset)
+      visualBrief = await summarizeForVisual(fullText, assetTitle || assetRow.title, assetTags)
+    }
+
     const contextLines: string[] = []
-    if (assetTitle) contextLines.push(`Content title: ${assetTitle}`)
-    if (assetTags.length) contextLines.push(`Content themes/tags: ${assetTags.join(', ')}`)
+    if (visualBrief) {
+      contextLines.push(`Core message & visual themes (from reading the actual content):\n${visualBrief}`)
+    } else {
+      // Extraction/understanding failed or produced nothing — fall back to
+      // the shallow title/tags context so generation still proceeds.
+      if (assetTitle) contextLines.push(`Content title: ${assetTitle}`)
+      if (assetTags.length) contextLines.push(`Content themes/tags: ${assetTags.join(', ')}`)
+    }
 
     const fullPrompt = contextLines.length
       ? `${BASE_PROMPT}\n\nContent context for visual inspiration (do NOT render any of this as visible text in the image):\n${contextLines.join('\n')}`
       : BASE_PROMPT
 
-    const model = process.env.OPENAI_IMAGE_MODEL?.trim() || 'dall-e-3'
+    const model = process.env.OPENAI_IMAGE_MODEL?.trim() || 'gpt-image-2'
     const isDalle = model.startsWith('dall-e')
     const reqBody: Record<string, unknown> = {
       model,

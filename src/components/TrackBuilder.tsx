@@ -230,6 +230,10 @@ export function TrackBuilder({
         body: JSON.stringify({
           trackId: initialTrack?.id ?? null,
           trackTitle: externalTitle.trim() || title.trim(),
+          // Server fetches each asset row itself and reads its actual content
+          // (PDF text / article body / transcript) rather than relying on
+          // client-side titles alone.
+          assetIds: trackAssets.map(a => a.id).filter(Boolean),
           assetTitles: trackAssets.map(a => a.title).filter(Boolean),
           assetDescriptions: trackAssets
             .map(a => (a as Asset & { description?: string }).description)

@@ -139,7 +139,7 @@ const EXTRACT_VERSION = 2
 // pre-populated by the local backfill script (scripts/backfill-transcripts.mjs),
 // which runs from a residential IP. This function therefore treats the DB cache
 // as the source of truth and never discards a good cache when a live fetch fails.
-async function extractAssetText(asset: Asset): Promise<string> {
+export async function extractAssetText(asset: Asset): Promise<string> {
   const url = asset.fileUrl ?? asset.sourceUrl
   if (!url) return ''
 
@@ -172,6 +172,97 @@ async function extractAssetText(asset: Asset): Promise<string> {
     console.error('[asset-extract] cache write failed:', err)
   }
   return text
+}
+
+// ---------------------------------------------------------------------------
+// Document understanding for image-generation prompts
+// ---------------------------------------------------------------------------
+
+function extractResponsesOutputText(data: unknown): string {
+  if (!data || typeof data !== 'object') return ''
+  const record = data as Record<string, unknown>
+  if (typeof record.output_text === 'string') return record.output_text
+  const output = record.output
+  if (!Array.isArray(output)) return ''
+  const chunks: string[] = []
+  for (const item of output) {
+    if (!item || typeof item !== 'object') continue
+    const content = (item as Record<string, unknown>).content
+    if (!Array.isArray(content)) continue
+    for (const c of content) {
+      if (c && typeof c === 'object' && typeof (c as Record<string, unknown>).text === 'string') {
+        chunks.push((c as Record<string, unknown>).text as string)
+      }
+    }
+  }
+  return chunks.join('\n').trim()
+}
+
+const DOC_UNDERSTANDING_MODEL = 'gpt-5.4-mini'
+
+/**
+ * Reads the full extracted text of a whitepaper / article / video transcript
+ * and produces a short creative brief — core message + key themes phrased as
+ * visual metaphors — for handoff into an image-generation prompt. This is the
+ * "document understanding" stage: gpt-5.4-mini reads the real content once,
+ * and its output becomes the context the image model (gpt-image-2) works
+ * from, instead of just a title and a handful of tags.
+ *
+ * Best-effort: returns '' on missing key, empty input, or any API failure so
+ * callers can fall back to title/tags-only context.
+ */
+export async function summarizeForVisual(
+  fullText: string,
+  title: string,
+  tags: string[]
+): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey || !fullText.trim()) return ''
+
+  const instructions = [
+    'You read enterprise marketing/whitepaper content and produce a short creative brief',
+    'for an AI image-generation model that will illustrate a hero banner for it.',
+    '',
+    'Output plain text, no markdown, no JSON, under 120 words:',
+    '1. One sentence: the core message of this content.',
+    '2. 4-6 key themes/concepts, phrased as visual metaphors an illustrator could depict',
+    '   (e.g. "flowing data streams", "connected customer nodes") — never literal diagrams,',
+    '   charts, dashboards, or on-image text callouts.',
+    '',
+    'Describe THEMES and MOOD only — never mention specific customer names, dollar figures,',
+    'or confidential claims from the source content.',
+  ].join('\n')
+
+  const input = [
+    `Title: ${title}`,
+    tags.length ? `Tags: ${tags.join(', ')}` : '',
+    '',
+    'Content:',
+    fullText.slice(0, 12000),
+  ].filter(Boolean).join('\n')
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      signal: AbortSignal.timeout(20_000),
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: DOC_UNDERSTANDING_MODEL,
+        instructions,
+        input,
+        max_output_tokens: 300,
+        store: false,
+      }),
+    })
+    if (!res.ok) {
+      console.error('[summarize-for-visual] OpenAI error:', res.status, await res.text().catch(() => ''))
+      return ''
+    }
+    return extractResponsesOutputText(await res.json()).slice(0, 1500)
+  } catch (err) {
+    console.error('[summarize-for-visual] failed:', err)
+    return ''
+  }
 }
 
 /**

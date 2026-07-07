@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { db } from '@/db'
-import { users } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { users, assets } from '@/db/schema'
+import { eq, inArray } from 'drizzle-orm'
+import { extractAssetText, summarizeForVisual, type Asset } from '@/lib/trackChatServer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -70,6 +71,11 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}))
     const trackId: string | null = typeof body.trackId === 'string' ? body.trackId : null
     const trackTitle: string = typeof body.trackTitle === 'string' ? body.trackTitle.trim().slice(0, 200) : ''
+    const assetIds: string[] = Array.isArray(body.assetIds)
+      ? (body.assetIds as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 6)
+      : []
+    // Legacy/fallback fields — used only if assetIds is empty or DB lookup
+    // yields nothing (e.g. assets were removed from the track after selection).
     const assetTitles: string[] = Array.isArray(body.assetTitles)
       ? (body.assetTitles as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 8)
       : []
@@ -80,19 +86,44 @@ export async function POST(req: Request) {
     const apiKey = process.env.OPENAI_API_KEY?.trim()
     if (!apiKey) return NextResponse.json({ error: 'Image generation not configured' }, { status: 503 })
 
-    // Append track context as inspiration (not to show as text in image)
+    // Document understanding: read each selected asset's actual content
+    // (PDF text, article body, video transcript) and have gpt-5.4-mini
+    // distill the whole track into a short visual brief, instead of handing
+    // the image model a bare list of titles.
+    let visualBrief = ''
+    if (assetIds.length > 0) {
+      const assetRows = await db.select().from(assets).where(inArray(assets.id, assetIds))
+      const extracted = await Promise.all(
+        assetRows.map(async (row) => {
+          const text = await extractAssetText({ ...row, displayTitle: null, subCopy: null } as Asset).catch(() => '')
+          return text ? `Asset: ${row.title}\n${text.slice(0, 3000)}` : ''
+        })
+      )
+      const combinedText = extracted.filter(Boolean).join('\n\n')
+      if (combinedText) {
+        visualBrief = await summarizeForVisual(combinedText, trackTitle, [])
+      }
+    }
+
     const contextLines: string[] = []
-    if (trackTitle) contextLines.push(`Track title: ${trackTitle}`)
-    if (assetTitles.length) contextLines.push(`Content pieces: ${assetTitles.join(', ')}`)
-    if (assetDescriptions.length) {
-      contextLines.push(`Key themes from the content: ${assetDescriptions.filter(Boolean).join(' | ')}`)
+    if (visualBrief) {
+      if (trackTitle) contextLines.push(`Track title: ${trackTitle}`)
+      contextLines.push(`Core message & visual themes (from reading the actual content):\n${visualBrief}`)
+    } else {
+      // Extraction/understanding failed or produced nothing — fall back to
+      // the shallow title/description context so generation still proceeds.
+      if (trackTitle) contextLines.push(`Track title: ${trackTitle}`)
+      if (assetTitles.length) contextLines.push(`Content pieces: ${assetTitles.join(', ')}`)
+      if (assetDescriptions.length) {
+        contextLines.push(`Key themes from the content: ${assetDescriptions.filter(Boolean).join(' | ')}`)
+      }
     }
 
     const fullPrompt = contextLines.length
       ? `${BASE_PROMPT}\n\nContent context for visual inspiration (do NOT render any of this as visible text in the image):\n${contextLines.join('\n')}`
       : BASE_PROMPT
 
-    const model = process.env.OPENAI_IMAGE_MODEL?.trim() || 'dall-e-3'
+    const model = process.env.OPENAI_IMAGE_MODEL?.trim() || 'gpt-image-2'
     const isDalle = model.startsWith('dall-e')
     const reqBody: Record<string, unknown> = {
       model,
