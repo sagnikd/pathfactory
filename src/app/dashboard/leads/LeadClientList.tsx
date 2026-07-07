@@ -83,8 +83,13 @@ export default function LeadClientList({ leads, timelines, liveScores, anonymous
     return /^i_(am|agree|confirm|acknowledge)_/i.test(key)
   }
 
-  // Human-readable label for any field key.
+  // Human-readable label for any field key. Known keys (including compound
+  // ones like utm_medium) are checked before suffix-stripping — otherwise
+  // cleanFieldKey mistakes the real word after the underscore (e.g. "medium",
+  // "source", "campaign") for a random form-builder suffix and collapses
+  // utm_source/utm_medium/utm_campaign all down to the same "utm" key.
   function fieldLabel(rawKey: string): string {
+    if (FIELD_LABELS[rawKey]) return FIELD_LABELS[rawKey]
     const key = cleanFieldKey(rawKey)
     return FIELD_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
