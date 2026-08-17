@@ -109,10 +109,12 @@ export default function TrackViewer({
       setGateForceToken((t) => t + 1)
       return
     }
-    if (chatConfig.enabled && !downloadChatAskedRef.current) {
-      downloadChatAskedRef.current = true
+    if (chatConfig.enabled && !isKnownVisitor) {
       e.preventDefault()
-      setDownloadChatToken((t) => t + 1)
+      if (!downloadChatAskedRef.current) {
+        downloadChatAskedRef.current = true
+        setDownloadChatToken((t) => t + 1)
+      }
     }
   }
 

@@ -178,27 +178,7 @@ export async function extractAssetText(asset: Asset): Promise<string> {
 // Document understanding for image-generation prompts
 // ---------------------------------------------------------------------------
 
-function extractResponsesOutputText(data: unknown): string {
-  if (!data || typeof data !== 'object') return ''
-  const record = data as Record<string, unknown>
-  if (typeof record.output_text === 'string') return record.output_text
-  const output = record.output
-  if (!Array.isArray(output)) return ''
-  const chunks: string[] = []
-  for (const item of output) {
-    if (!item || typeof item !== 'object') continue
-    const content = (item as Record<string, unknown>).content
-    if (!Array.isArray(content)) continue
-    for (const c of content) {
-      if (c && typeof c === 'object' && typeof (c as Record<string, unknown>).text === 'string') {
-        chunks.push((c as Record<string, unknown>).text as string)
-      }
-    }
-  }
-  return chunks.join('\n').trim()
-}
-
-const DOC_UNDERSTANDING_MODEL = 'gpt-5.4-mini'
+const DOC_UNDERSTANDING_MODEL = 'claude-haiku-4-5-20251001'
 
 /**
  * Reads the full extracted text of a whitepaper / article / video transcript
@@ -216,10 +196,10 @@ export async function summarizeForVisual(
   title: string,
   tags: string[]
 ): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
   if (!apiKey || !fullText.trim()) return ''
 
-  const instructions = [
+  const system = [
     'You read enterprise marketing/whitepaper content and produce a short creative brief',
     'for an AI image-generation model that will illustrate a hero banner for it.',
     '',
@@ -233,7 +213,7 @@ export async function summarizeForVisual(
     'or confidential claims from the source content.',
   ].join('\n')
 
-  const input = [
+  const userContent = [
     `Title: ${title}`,
     tags.length ? `Tags: ${tags.join(', ')}` : '',
     '',
@@ -242,23 +222,27 @@ export async function summarizeForVisual(
   ].filter(Boolean).join('\n')
 
   try {
-    const res = await fetch('https://api.openai.com/v1/responses', {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: AbortSignal.timeout(20_000),
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         model: DOC_UNDERSTANDING_MODEL,
-        instructions,
-        input,
-        max_output_tokens: 300,
-        store: false,
+        system,
+        messages: [{ role: 'user', content: userContent }],
+        max_tokens: 300,
       }),
     })
     if (!res.ok) {
-      console.error('[summarize-for-visual] OpenAI error:', res.status, await res.text().catch(() => ''))
+      console.error('[summarize-for-visual] Anthropic error:', res.status, await res.text().catch(() => ''))
       return ''
     }
-    return extractResponsesOutputText(await res.json()).slice(0, 1500)
+    const data = await res.json() as { content?: Array<{ type: string; text: string }> }
+    return (data.content?.[0]?.text ?? '').trim().slice(0, 1500)
   } catch (err) {
     console.error('[summarize-for-visual] failed:', err)
     return ''
