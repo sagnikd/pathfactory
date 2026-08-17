@@ -181,18 +181,14 @@ function tightenAnswer(text: string): string {
 
 function extractOutputText(data: unknown): string {
   if (!isRecord(data)) return ''
-  if (typeof data.output_text === 'string') return data.output_text
-  const output = data.output
-  if (!Array.isArray(output)) return ''
-  const chunks: string[] = []
-  for (const item of output) {
-    if (!isRecord(item) || !Array.isArray(item.content)) continue
-    for (const content of item.content) {
-      if (!isRecord(content)) continue
-      if (typeof content.text === 'string') chunks.push(content.text)
+  const content = data.content
+  if (!Array.isArray(content)) return ''
+  for (const block of content) {
+    if (isRecord(block) && block.type === 'text' && typeof block.text === 'string') {
+      return block.text.trim()
     }
   }
-  return chunks.join('\n').trim()
+  return ''
 }
 
 type AssistantPayload = {
@@ -290,7 +286,7 @@ function parseAssistantPayload(
   }
 }
 
-async function callOpenAI(
+async function callClaude(
   context: TrackContext,
   message: string,
   currentAssetId: string | null,
@@ -300,7 +296,7 @@ async function callOpenAI(
   meetingConfigured: boolean,
   visitorProfile?: Record<string, string> | null
 ): Promise<AssistantPayload> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
   if (!apiKey) {
     return {
       answer: `This track covers "${context.track.title}". ${context.assets.length > 0 ? `Start with "${context.assets[0].title}" for an overview.` : 'Browse the assets to learn more.'}`,
@@ -308,16 +304,14 @@ async function callOpenAI(
     }
   }
 
-  const model = process.env.OPENAI_CHAT_MODEL?.trim() || 'gpt-4o-mini'
+  const model = process.env.ANTHROPIC_CHAT_MODEL?.trim() || 'claude-sonnet-5'
   const currentAsset: Asset | undefined = currentAssetId
     ? context.assets.find((a) => a.id === currentAssetId)
     : undefined
 
   const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset, customSystemPrompt, meetingConfigured, visitorProfile)
 
-  // Multi-turn: the model needs prior turns to track conversation state
-  // (e.g. which qualification step it's on) — a single message has no memory.
-  const input = [
+  const messages = [
     ...history.map((turn) => ({ role: turn.role, content: turn.content })),
     { role: 'user' as const, content: message },
   ]
@@ -326,25 +320,25 @@ async function callOpenAI(
   const timeout = setTimeout(() => controller.abort(), 20_000)
 
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: controller.signal,
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model,
-        instructions: systemPrompt,
-        input,
-        max_output_tokens: 700,
-        store: false,
+        system: systemPrompt,
+        messages,
+        max_tokens: 700,
       }),
     })
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => '')
-      console.error('[track-chat] OpenAI error:', response.status, errBody)
+      console.error('[track-chat] Anthropic error:', response.status, errBody)
       return {
         answer: `This track covers "${context.track.title}". ${context.assets.length > 0 ? `A good starting point is "${context.assets[0].title}".` : ''}`,
         suggestedQuestions: getRecommendedQuestions(context, currentAssetId, askedQuestions),
@@ -353,7 +347,6 @@ async function callOpenAI(
 
     const rawText = extractOutputText(await response.json())
     const parsed = parseAssistantPayload(rawText, context, currentAssetId, askedQuestions)
-    // Clean markdown, keep line breaks; cap generously so answers aren't cut mid-thought
     const answer = tightenAnswer(stripMarkdown(parsed.answer)).slice(0, 1600) ||
       'I can help — please ask a more specific question about this track.'
     return {
@@ -361,7 +354,7 @@ async function callOpenAI(
       suggestedQuestions: parsed.suggestedQuestions,
     }
   } catch (error) {
-    console.error('[track-chat] OpenAI request failed:', error)
+    console.error('[track-chat] Anthropic request failed:', error)
     return {
       answer: `This track covers "${context.track.title}". ${context.assets.length > 0 ? `Start with "${context.assets[0].title}" for an overview.` : 'Browse the assets to learn more.'}`,
       suggestedQuestions: getRecommendedQuestions(context, currentAssetId, askedQuestions),
@@ -697,7 +690,7 @@ export async function POST(req: Request) {
       ? currentAssetId
       : null
 
-    const assistant = await callOpenAI(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt, Boolean(chatConfig.meetingUrl), visitorProfile)
+    const assistant = await callClaude(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt, Boolean(chatConfig.meetingUrl), visitorProfile)
 
     // Persist the turn to the chat inbox (best-effort — never block the reply).
     // Kickoff turns get a human-readable label instead of the raw internal

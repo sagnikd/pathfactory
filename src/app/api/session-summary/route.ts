@@ -217,18 +217,18 @@ async function generateSummaryLine(facts: {
   userQuestions: string[]; clickedMeeting: boolean; location: string
 }): Promise<string> {
   const template = buildTemplateLine(facts)
-  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
   if (!apiKey) return template
 
-  const model = process.env.OPENAI_CHAT_MODEL?.trim() || 'gpt-4o-mini'
-  const instructions = [
+  const model = process.env.ANTHROPIC_CHAT_MODEL?.trim() || 'claude-haiku-4-5-20251001'
+  const system = [
     'You write a single, punchy sentence summarizing a B2B website visitor session for a sales/marketing alert email.',
     'Write in third person, past tense. Be specific and concrete. No greeting, no preamble, ONE sentence only.',
     'If they asked questions, characterize the TOPIC of the questions in a few words (e.g. "asked three questions about governance").',
     'If they clicked "Book a meeting", mention it as a strong buying signal. Mention dwell time and what they watched/read.',
     'Do not invent facts. Use only the data provided. Plain text, no markdown.',
   ].join(' ')
-  const input = JSON.stringify({
+  const userContent = JSON.stringify({
     visitor: facts.who,
     track: facts.trackTitle,
     timeSpent: facts.dwellPhrase,
@@ -241,16 +241,25 @@ async function generateSummaryLine(facts: {
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 12_000)
-    const res = await fetch('https://api.openai.com/v1/responses', {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: controller.signal,
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, instructions, input, max_output_tokens: 200, store: false }),
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        system,
+        messages: [{ role: 'user', content: userContent }],
+        max_tokens: 200,
+      }),
     })
     clearTimeout(timeout)
     if (!res.ok) return template
-    const json = await res.json()
-    const text = extractOutputText(json).replace(/\s+/g, ' ').trim()
+    const data = await res.json() as { content?: Array<{ type: string; text: string }> }
+    const text = (data.content?.[0]?.text ?? '').replace(/\s+/g, ' ').trim()
     return text || template
   } catch {
     return template
@@ -273,25 +282,6 @@ function buildTemplateLine(facts: {
   return line + '.'
 }
 
-function extractOutputText(data: unknown): string {
-  if (!data || typeof data !== 'object') return ''
-  const d = data as Record<string, unknown>
-  if (typeof d.output_text === 'string') return d.output_text
-  const output = d.output
-  if (!Array.isArray(output)) return ''
-  const chunks: string[] = []
-  for (const item of output) {
-    if (!item || typeof item !== 'object') continue
-    const content = (item as Record<string, unknown>).content
-    if (!Array.isArray(content)) continue
-    for (const c of content) {
-      if (c && typeof c === 'object' && typeof (c as Record<string, unknown>).text === 'string') {
-        chunks.push((c as Record<string, unknown>).text as string)
-      }
-    }
-  }
-  return chunks.join('\n').trim()
-}
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
