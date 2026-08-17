@@ -271,9 +271,6 @@ export default function TrackViewer({
 
   const [captionCopied, setCaptionCopied] = useState(false)
 
-  // LinkedIn's share dialog only ever pulls the URL's OG tags for the link
-  // preview — it has no supported way to prefill the post's text anymore.
-  // Copy a ready-to-paste caption to the clipboard as the next best thing.
   function buildShareCaption(): string {
     const title = currentAsset?.displayTitle ?? currentAsset?.title ?? track.title
     const desc = currentAsset?.description?.trim()
@@ -281,9 +278,14 @@ export default function TrackViewer({
     return `${title}\n\n${hook}\n\nSharing this because I think it's worth your time.`
   }
 
+  // shareArticle?mini=true pre-fills the LinkedIn composer with summary + title.
+  // share-offsite only reads OG tags and has no text param.
   function linkedInShareHref(): string {
     const url = shareUrlFor('linkedin')
-    return url ? `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}` : ''
+    if (!url) return ''
+    const title = currentAsset?.displayTitle ?? currentAsset?.title ?? track.title
+    const caption = buildShareCaption()
+    return `https://www.linkedin.com/shareArticle?mini=true&url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&summary=${encodeURIComponent(caption)}`
   }
 
   function facebookShareHref(): string {
@@ -306,15 +308,8 @@ export default function TrackViewer({
     e.preventDefault()
     const href = linkedInShareHref()
     if (!href) return
-    // Open synchronously (in the same tick as the click) so the popup isn't
-    // blocked — browsers revoke that allowance once you `await` first.
+    // Open synchronously so the popup isn't blocked by the browser.
     window.open(href, '_blank', 'noopener,noreferrer')
-    navigator.clipboard?.writeText(buildShareCaption())
-      .then(() => {
-        setCaptionCopied(true)
-        setTimeout(() => setCaptionCopied(false), 4000)
-      })
-      .catch(() => {})
   }
 
   // Matches AssetViewer's own PDF routing — an "article" asset whose sourceUrl
@@ -412,8 +407,8 @@ export default function TrackViewer({
                     onClick={handleLinkedInShare}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label="Share on LinkedIn — copies a suggested caption to your clipboard"
-                    title="Copies a suggested caption to your clipboard, then opens LinkedIn"
+                    aria-label="Share on LinkedIn with pre-filled post caption"
+                    title="Opens LinkedIn with your post caption pre-filled"
                     className="w-8 h-8 rounded-md border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
                   >
                     <LinkedInIcon className="w-4 h-4" />
