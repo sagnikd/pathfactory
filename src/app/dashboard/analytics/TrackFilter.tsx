@@ -9,41 +9,62 @@ export function TrackFilter({ tracks }: { tracks: { id: string; title: string }[
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
+  const rawParam = searchParams.get('trackIds') ?? ''
+  const urlIds = rawParam.split(',').filter(Boolean)
+
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  // Local pending state — immediate checkbox feedback without page reload per click
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set(urlIds))
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const rawParam = searchParams.get('trackIds') ?? ''
-  const selectedIds = new Set(rawParam.split(',').filter(Boolean))
-
+  // Sync pendingIds from URL whenever dropdown is closed (handles back/forward)
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setSearch('')
-      }
+    if (!open) {
+      setPendingIds(new Set(urlIds))
     }
-    if (open) document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawParam])
 
-  function push(ids: Set<string>) {
+  function applyAndClose() {
+    setOpen(false)
+    setSearch('')
+    const urlStr = [...urlIds].sort().join(',')
+    const pendingStr = [...pendingIds].sort().join(',')
+    if (urlStr === pendingStr) return
     const sp = new URLSearchParams(searchParams.toString())
-    if (ids.size > 0) sp.set('trackIds', Array.from(ids).join(','))
+    if (pendingIds.size > 0) sp.set('trackIds', [...pendingIds].join(','))
     else sp.delete('trackIds')
     router.push(`${pathname}?${sp.toString()}`)
     router.refresh()
   }
 
-  function toggleTrack(id: string) {
-    const next = new Set(selectedIds)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    push(next)
+  function clearAll() {
+    setPendingIds(new Set())
+    const sp = new URLSearchParams(searchParams.toString())
+    sp.delete('trackIds')
+    router.push(`${pathname}?${sp.toString()}`)
+    router.refresh()
   }
 
-  function clearAll() {
-    push(new Set())
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        applyAndClose()
+      }
+    }
+    if (open) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pendingIds, rawParam])
+
+  function toggleTrack(id: string) {
+    setPendingIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   const filtered = tracks.filter(t =>
@@ -51,11 +72,11 @@ export function TrackFilter({ tracks }: { tracks: { id: string; title: string }[
   )
 
   const label =
-    selectedIds.size === 0
+    pendingIds.size === 0
       ? 'All tracks'
-      : selectedIds.size === 1
-      ? (tracks.find(t => t.id === [...selectedIds][0])?.title ?? '1 track')
-      : `${selectedIds.size} tracks`
+      : pendingIds.size === 1
+      ? (tracks.find(t => t.id === [...pendingIds][0])?.title ?? '1 track')
+      : `${pendingIds.size} tracks`
 
   return (
     <div className="relative" ref={containerRef}>
@@ -66,7 +87,7 @@ export function TrackFilter({ tracks }: { tracks: { id: string; title: string }[
       >
         <ListFilter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         <span className="max-w-[160px] truncate">{label}</span>
-        {selectedIds.size > 0 && (
+        {pendingIds.size > 0 && (
           <span
             role="button"
             tabIndex={0}
@@ -103,25 +124,32 @@ export function TrackFilter({ tracks }: { tracks: { id: string; title: string }[
                   onClick={() => toggleTrack(t.id)}
                   className="flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-accent text-left"
                 >
-                  <span className={`flex items-center justify-center w-3.5 h-3.5 rounded border shrink-0 ${selectedIds.has(t.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-input'}`}>
-                    {selectedIds.has(t.id) && <Check className="w-2.5 h-2.5" />}
+                  <span className={`flex items-center justify-center w-3.5 h-3.5 rounded border shrink-0 ${pendingIds.has(t.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-input'}`}>
+                    {pendingIds.has(t.id) && <Check className="w-2.5 h-2.5" />}
                   </span>
                   <span className="truncate">{t.title}</span>
                 </button>
               ))
             )}
           </div>
-          {selectedIds.size > 0 && (
-            <div className="p-2 border-t border-border">
+          <div className="p-2 border-t border-border flex gap-2">
+            {pendingIds.size > 0 && (
               <button
                 type="button"
-                onClick={clearAll}
-                className="w-full h-6 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setPendingIds(new Set())}
+                className="flex-1 h-6 text-xs text-muted-foreground hover:text-foreground"
               >
-                Clear selection
+                Clear
               </button>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              onClick={applyAndClose}
+              className="flex-1 h-6 text-xs font-medium bg-primary text-primary-foreground rounded hover:opacity-90"
+            >
+              Apply
+            </button>
+          </div>
         </div>
       )}
     </div>
