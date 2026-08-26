@@ -103,7 +103,7 @@ function toSqlTimestamp(date: Date): string {
 export default async function AnalyticsDashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string | string[]; to?: string | string[]; trackId?: string | string[] }>
+  searchParams: Promise<{ from?: string | string[]; to?: string | string[]; trackIds?: string | string[] }>
 }) {
   const { dbUser } = await getDashboardAuthContext()
   const orgId = dbUser.organizationId
@@ -111,7 +111,8 @@ export default async function AnalyticsDashboard({
   const sp       = await searchParams
   const rawFrom  = getSearchParam(sp.from)
   const rawTo    = getSearchParam(sp.to)
-  const trackId  = getSearchParam(sp.trackId) || null
+  const UUID_RE  = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const trackIds = (getSearchParam(sp.trackIds) ?? '').split(',').filter(id => UUID_RE.test(id))
   let dateFrom   = parseDateParam(rawFrom)
   let dateTo     = parseDateParam(rawTo, true)
 
@@ -138,7 +139,9 @@ export default async function AnalyticsDashboard({
 
   // Track filter fragment for raw SQL — appended alongside dateFilter wherever
   // a query already joins a sessions row aliased `s`.
-  const trackFilter = trackId ? sql` AND s.track_id = ${trackId}::uuid` : sql``
+  const trackFilter = trackIds.length > 0
+    ? sql` AND s.track_id IN (${sql.join(trackIds.map(id => sql`${id}::uuid`), sql`, `)})`
+    : sql``
 
   // ── 1. KPI counts ──────────────────────────────────────────────────────────
   const orgAssets   = await db.select({ id: assets.id }).from(assets).where(eq(assets.organizationId, orgId))
@@ -151,7 +154,7 @@ export default async function AnalyticsDashboard({
     const baseWhere = and(
       inArray(engagements.assetId, orgAssetIds),
       ...engDateConds,
-      ...(trackId ? [eq(sessions.trackId, trackId)] : []),
+      ...(trackIds.length > 0 ? [inArray(sessions.trackId, trackIds)] : []),
     )
 
     const sessionsRes = await db.select({ count: count() })
