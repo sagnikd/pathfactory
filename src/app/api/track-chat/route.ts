@@ -179,6 +179,24 @@ function tightenAnswer(text: string): string {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
+// Truncate at the last sentence boundary within maxLen so the answer never
+// ends mid-word or mid-sentence. Falls back to hard slice + ellipsis.
+function truncateAtSentence(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text
+  const slice = text.slice(0, maxLen)
+  const lastEnd = Math.max(
+    slice.lastIndexOf('.\n'),
+    slice.lastIndexOf('. '),
+    slice.lastIndexOf('!\n'),
+    slice.lastIndexOf('! '),
+    slice.lastIndexOf('?\n'),
+    slice.lastIndexOf('? '),
+    slice.lastIndexOf('\n• ') - 1, // stop before the next bullet starts
+  )
+  if (lastEnd > maxLen * 0.4) return text.slice(0, lastEnd + 1).trim()
+  return slice.trim() + '…'
+}
+
 function extractOutputText(data: unknown): string {
   if (!isRecord(data)) return ''
   const choices = data.choices
@@ -345,7 +363,7 @@ async function callDeepseek(
 
     const rawText = extractOutputText(await response.json())
     const parsed = parseAssistantPayload(rawText, context, currentAssetId, askedQuestions)
-    const answer = tightenAnswer(stripMarkdown(parsed.answer)).slice(0, 1600) ||
+    const answer = truncateAtSentence(tightenAnswer(stripMarkdown(parsed.answer)), 900) ||
       'I can help — please ask a more specific question about this track.'
     return {
       answer,
