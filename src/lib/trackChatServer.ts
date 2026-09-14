@@ -178,7 +178,7 @@ export async function extractAssetText(asset: Asset): Promise<string> {
 // Document understanding for image-generation prompts
 // ---------------------------------------------------------------------------
 
-const DOC_UNDERSTANDING_MODEL = 'deepseek-chat'
+const DOC_UNDERSTANDING_MODEL = process.env.DEEPSEEK_CHAT_MODEL?.trim() || 'DeepSeek-V4.1-Flash'
 
 /**
  * Reads the full extracted text of a whitepaper / article / video transcript

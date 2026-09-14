@@ -303,7 +303,7 @@ async function callDeepseek(
     }
   }
 
-  const model = process.env.DEEPSEEK_CHAT_MODEL?.trim() || 'deepseek-chat'
+  const model = process.env.DEEPSEEK_CHAT_MODEL?.trim() || 'DeepSeek-V4.1-Flash'
   const currentAsset: Asset | undefined = currentAssetId
     ? context.assets.find((a) => a.id === currentAssetId)
     : undefined

@@ -220,7 +220,7 @@ async function generateSummaryLine(facts: {
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
   if (!apiKey) return template
 
-  const model = process.env.DEEPSEEK_CHAT_MODEL?.trim() || 'deepseek-chat'
+  const model = process.env.DEEPSEEK_CHAT_MODEL?.trim() || 'DeepSeek-V4.1-Flash'
   const system = [
     'You write a single, punchy sentence summarizing a B2B website visitor session for a sales/marketing alert email.',
     'Write in third person, past tense. Be specific and concrete. No greeting, no preamble, ONE sentence only.',
