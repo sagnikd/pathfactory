@@ -9,8 +9,8 @@
 --     and direct Studio queries by non-owner users.
 
 -- Helper: resolve the current JWT user's organization_id.
--- SECURITY DEFINER so it can read `users` even after RLS is on.
-CREATE OR REPLACE FUNCTION auth.user_org_id()
+-- Lives in public schema (no superuser needed); SECURITY DEFINER reads users after RLS is on.
+CREATE OR REPLACE FUNCTION public.user_org_id()
 RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER AS $$
   SELECT organization_id FROM public.users WHERE id = auth.uid()
 $$;
@@ -20,30 +20,30 @@ ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "org: members see own org" ON organizations
   FOR SELECT TO authenticated
-  USING (id = auth.user_org_id());
+  USING (id = public.user_org_id());
 
 CREATE POLICY "org: members update own org" ON organizations
   FOR UPDATE TO authenticated
-  USING (id = auth.user_org_id());
+  USING (id = public.user_org_id());
 
 -- ── users ─────────────────────────────────────────────────────────────────────
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "users: see own org" ON users
   FOR SELECT TO authenticated
-  USING (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id());
 
 CREATE POLICY "users: manage own org" ON users
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id());
 
 -- ── assets ────────────────────────────────────────────────────────────────────
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "assets: dashboard org scope" ON assets
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id())
-  WITH CHECK (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id())
+  WITH CHECK (organization_id = public.user_org_id());
 
 -- Public track pages need to read asset metadata (title, thumbnail, source_url).
 CREATE POLICY "assets: public read" ON assets
@@ -55,8 +55,8 @@ ALTER TABLE tracks ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "tracks: dashboard org scope" ON tracks
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id())
-  WITH CHECK (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id())
+  WITH CHECK (organization_id = public.user_org_id());
 
 -- Public track pages resolve tracks by slug.
 CREATE POLICY "tracks: public read published" ON tracks
@@ -70,7 +70,7 @@ CREATE POLICY "track_assets: dashboard org scope" ON track_assets
   FOR ALL TO authenticated
   USING (
     track_id IN (
-      SELECT id FROM tracks WHERE organization_id = auth.user_org_id()
+      SELECT id FROM tracks WHERE organization_id = public.user_org_id()
     )
   );
 
@@ -85,7 +85,7 @@ CREATE POLICY "form_configs: dashboard org scope" ON form_configs
   FOR ALL TO authenticated
   USING (
     track_id IN (
-      SELECT id FROM tracks WHERE organization_id = auth.user_org_id()
+      SELECT id FROM tracks WHERE organization_id = public.user_org_id()
     )
   );
 
@@ -129,7 +129,7 @@ CREATE POLICY "sessions: dashboard org scope" ON sessions
   FOR SELECT TO authenticated
   USING (
     track_id IN (
-      SELECT id FROM tracks WHERE organization_id = auth.user_org_id()
+      SELECT id FROM tracks WHERE organization_id = public.user_org_id()
     )
   );
 
@@ -144,7 +144,7 @@ CREATE POLICY "engagements: dashboard org scope" ON engagements
   FOR SELECT TO authenticated
   USING (
     asset_id IN (
-      SELECT id FROM assets WHERE organization_id = auth.user_org_id()
+      SELECT id FROM assets WHERE organization_id = public.user_org_id()
     )
   );
 
@@ -169,16 +169,16 @@ ALTER TABLE webhooks ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "webhooks: org scope" ON webhooks
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id())
-  WITH CHECK (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id())
+  WITH CHECK (organization_id = public.user_org_id());
 
 -- ── abm_accounts ──────────────────────────────────────────────────────────────
 ALTER TABLE abm_accounts ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "abm_accounts: org scope" ON abm_accounts
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id())
-  WITH CHECK (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id())
+  WITH CHECK (organization_id = public.user_org_id());
 
 -- ── abm_account_domains ───────────────────────────────────────────────────────
 ALTER TABLE abm_account_domains ENABLE ROW LEVEL SECURITY;
@@ -187,7 +187,7 @@ CREATE POLICY "abm_account_domains: org scope" ON abm_account_domains
   FOR ALL TO authenticated
   USING (
     abm_account_id IN (
-      SELECT id FROM abm_accounts WHERE organization_id = auth.user_org_id()
+      SELECT id FROM abm_accounts WHERE organization_id = public.user_org_id()
     )
   );
 
@@ -196,32 +196,32 @@ ALTER TABLE abm_matches ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "abm_matches: org scope" ON abm_matches
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id())
-  WITH CHECK (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id())
+  WITH CHECK (organization_id = public.user_org_id());
 
 -- ── abm_alerts ────────────────────────────────────────────────────────────────
 ALTER TABLE abm_alerts ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "abm_alerts: org scope" ON abm_alerts
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id())
-  WITH CHECK (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id())
+  WITH CHECK (organization_id = public.user_org_id());
 
 -- ── company_aliases ───────────────────────────────────────────────────────────
 ALTER TABLE company_aliases ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "company_aliases: org scope" ON company_aliases
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id())
-  WITH CHECK (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id())
+  WITH CHECK (organization_id = public.user_org_id());
 
 -- ── track_slug_redirects ──────────────────────────────────────────────────────
 ALTER TABLE track_slug_redirects ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "track_slug_redirects: dashboard org scope" ON track_slug_redirects
   FOR ALL TO authenticated
-  USING (organization_id = auth.user_org_id())
-  WITH CHECK (organization_id = auth.user_org_id());
+  USING (organization_id = public.user_org_id())
+  WITH CHECK (organization_id = public.user_org_id());
 
 CREATE POLICY "track_slug_redirects: public read" ON track_slug_redirects
   FOR SELECT TO anon
