@@ -178,7 +178,7 @@ export async function extractAssetText(asset: Asset): Promise<string> {
 // Document understanding for image-generation prompts
 // ---------------------------------------------------------------------------
 
-const DOC_UNDERSTANDING_MODEL = 'claude-haiku-4-5-20251001'
+const DOC_UNDERSTANDING_MODEL = 'deepseek-chat'
 
 /**
  * Reads the full extracted text of a whitepaper / article / video transcript
@@ -196,7 +196,7 @@ export async function summarizeForVisual(
   title: string,
   tags: string[]
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
   if (!apiKey || !fullText.trim()) return ''
 
   const system = [
@@ -222,27 +222,28 @@ export async function summarizeForVisual(
   ].filter(Boolean).join('\n')
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       signal: AbortSignal.timeout(20_000),
       headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model: DOC_UNDERSTANDING_MODEL,
-        system,
-        messages: [{ role: 'user', content: userContent }],
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userContent },
+        ],
         max_tokens: 300,
       }),
     })
     if (!res.ok) {
-      console.error('[summarize-for-visual] Anthropic error:', res.status, await res.text().catch(() => ''))
+      console.error('[summarize-for-visual] Deepseek error:', res.status, await res.text().catch(() => ''))
       return ''
     }
-    const data = await res.json() as { content?: Array<{ type: string; text: string }> }
-    return (data.content?.[0]?.text ?? '').trim().slice(0, 1500)
+    const data = await res.json() as { choices?: Array<{ message: { content: string } }> }
+    return (data.choices?.[0]?.message?.content ?? '').trim().slice(0, 1500)
   } catch (err) {
     console.error('[summarize-for-visual] failed:', err)
     return ''

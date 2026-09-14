@@ -181,14 +181,13 @@ function tightenAnswer(text: string): string {
 
 function extractOutputText(data: unknown): string {
   if (!isRecord(data)) return ''
-  const content = data.content
-  if (!Array.isArray(content)) return ''
-  for (const block of content) {
-    if (isRecord(block) && block.type === 'text' && typeof block.text === 'string') {
-      return block.text.trim()
-    }
-  }
-  return ''
+  const choices = data.choices
+  if (!Array.isArray(choices) || !choices.length) return ''
+  const choice = choices[0]
+  if (!isRecord(choice)) return ''
+  const msg = choice.message
+  if (!isRecord(msg)) return ''
+  return typeof msg.content === 'string' ? msg.content.trim() : ''
 }
 
 type AssistantPayload = {
@@ -286,7 +285,7 @@ function parseAssistantPayload(
   }
 }
 
-async function callClaude(
+async function callDeepseek(
   context: TrackContext,
   message: string,
   currentAssetId: string | null,
@@ -296,7 +295,7 @@ async function callClaude(
   meetingConfigured: boolean,
   visitorProfile?: Record<string, string> | null
 ): Promise<AssistantPayload> {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
   if (!apiKey) {
     return {
       answer: `This track covers "${context.track.title}". ${context.assets.length > 0 ? `Start with "${context.assets[0].title}" for an overview.` : 'Browse the assets to learn more.'}`,
@@ -304,7 +303,7 @@ async function callClaude(
     }
   }
 
-  const model = process.env.ANTHROPIC_CHAT_MODEL?.trim() || 'claude-sonnet-5'
+  const model = process.env.DEEPSEEK_CHAT_MODEL?.trim() || 'deepseek-chat'
   const currentAsset: Asset | undefined = currentAssetId
     ? context.assets.find((a) => a.id === currentAssetId)
     : undefined
@@ -312,6 +311,7 @@ async function callClaude(
   const systemPrompt = await buildSystemPrompt(context.track, context.assets, currentAsset, customSystemPrompt, meetingConfigured, visitorProfile)
 
   const messages = [
+    { role: 'system' as const, content: systemPrompt },
     ...history.map((turn) => ({ role: turn.role, content: turn.content })),
     { role: 'user' as const, content: message },
   ]
@@ -320,17 +320,15 @@ async function callClaude(
   const timeout = setTimeout(() => controller.abort(), 20_000)
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       signal: controller.signal,
       headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model,
-        system: systemPrompt,
         messages,
         max_tokens: 700,
       }),
@@ -338,7 +336,7 @@ async function callClaude(
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => '')
-      console.error('[track-chat] Anthropic error:', response.status, errBody)
+      console.error('[track-chat] Deepseek error:', response.status, errBody)
       return {
         answer: `This track covers "${context.track.title}". ${context.assets.length > 0 ? `A good starting point is "${context.assets[0].title}".` : ''}`,
         suggestedQuestions: getRecommendedQuestions(context, currentAssetId, askedQuestions),
@@ -354,7 +352,7 @@ async function callClaude(
       suggestedQuestions: parsed.suggestedQuestions,
     }
   } catch (error) {
-    console.error('[track-chat] Anthropic request failed:', error)
+    console.error('[track-chat] Deepseek request failed:', error)
     return {
       answer: `This track covers "${context.track.title}". ${context.assets.length > 0 ? `Start with "${context.assets[0].title}" for an overview.` : 'Browse the assets to learn more.'}`,
       suggestedQuestions: getRecommendedQuestions(context, currentAssetId, askedQuestions),
@@ -690,7 +688,7 @@ export async function POST(req: Request) {
       ? currentAssetId
       : null
 
-    const assistant = await callClaude(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt, Boolean(chatConfig.meetingUrl), visitorProfile)
+    const assistant = await callDeepseek(context, message, resolvedAssetId, askedQuestions, history, chatConfig.systemPrompt, Boolean(chatConfig.meetingUrl), visitorProfile)
 
     // Persist the turn to the chat inbox (best-effort — never block the reply).
     // Kickoff turns get a human-readable label instead of the raw internal
