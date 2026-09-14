@@ -361,12 +361,31 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
     Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0),
     MAX_RESUME_SECONDS
   )
-  const iframeRef   = useRef<HTMLIFrameElement>(null)
-  const loadedAtRef = useRef(0)
+  const iframeRef    = useRef<HTMLIFrameElement>(null)
+  const loadedAtRef  = useRef(0)
   const activeSecRef = useRef(0)
-  const lastTickRef = useRef(0)
-  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
-  const videoId     = getYouTubeVideoId(url)
+  const lastTickRef  = useRef(0)
+  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
+  const videoId      = getYouTubeVideoId(url)
+
+  // Duration detected from YouTube infoDelivery postMessage events
+  const [detectedDuration, setDetectedDuration] = useState<number | null>(null)
+
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.origin !== 'https://www.youtube.com') return
+      try {
+        const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
+        // initialDelivery fires on player load; infoDelivery fires while playing
+        const dur = d?.info?.duration
+        if ((d?.event === 'initialDelivery' || d?.event === 'infoDelivery') && typeof dur === 'number' && dur > 0) {
+          setDetectedDuration(Math.round(dur))
+        }
+      } catch {}
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [])
 
   const handleLoad = useCallback(() => {
     loadedAtRef.current = Date.now()
@@ -383,6 +402,11 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
     }, 5000)
     trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
 
+    // Register as a listener so YouTube starts sending infoDelivery events (incl. duration)
+    iframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'listening', id: 1 }),
+      'https://www.youtube.com'
+    )
     // Set playback rate via postMessage after a short delay for the player to initialise
     setTimeout(() => {
       iframeRef.current?.contentWindow?.postMessage(
@@ -402,11 +426,12 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
     }
   }, [storageKey, savedTime]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const src = videoId
-    ? `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1${savedTime > 5 ? `&start=${savedTime}` : ''}`
+    ? `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1&origin=${encodeURIComponent(origin)}${savedTime > 5 ? `&start=${savedTime}` : ''}`
     : null
 
-  const duration: number | null = asset.durationSeconds ?? null
+  const duration: number | null = detectedDuration ?? (asset.durationSeconds ?? null)
   const timeSaved = duration && duration > 0 ? formatTimeSaved(duration) : null
 
   if (!src) return <div className="absolute inset-0 bg-black" />
