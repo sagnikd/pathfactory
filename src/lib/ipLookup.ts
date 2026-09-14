@@ -25,6 +25,7 @@ const TELECOM_PATTERNS: RegExp[] = [
   /\b(amazon|google\s+cloud|microsoft\s+azure|digitalocean|cloudflare)\b/i,
   /\b(hetzner|ovh|linode|vultr)\b/i,
   /\b(hosting|datacenter|data\s+center|colocation)\b/i,
+  /\bcato\s+networks?\b/i,
 ]
 
 export function isTelecomOrISP(org: string): boolean {
