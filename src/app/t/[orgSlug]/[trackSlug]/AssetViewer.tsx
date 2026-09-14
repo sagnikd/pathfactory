@@ -339,6 +339,21 @@ function CloudinaryViewer({ url, asset, sessionId, onSummarize }: any) {
 // A plain <iframe> is owned by React — no external mutations, no crashes, no
 // black screen. Position is saved via wall-clock estimation while the tab is
 // visible and focused (±5 s accuracy), capped at MAX_RESUME_SECONDS.
+// Playback rate is set to 1.2× via postMessage (requires enablejsapi=1).
+
+const YT_SPEED = 1.2
+
+function formatTimeSaved(originalSecs: number): { original: string; fast: string; savedSecs: number } {
+  const fastSecs = Math.round(originalSecs / YT_SPEED)
+  const savedSecs = originalSecs - fastSecs
+
+  const fmt = (s: number) => {
+    const m = Math.floor(s / 60)
+    const sec = s % 60
+    return m > 0 ? `${m} min${sec > 0 ? ` ${sec} sec` : ''}` : `${sec} sec`
+  }
+  return { original: fmt(originalSecs), fast: fmt(fastSecs), savedSecs }
+}
 
 function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
   const storageKey  = `yt-time-${asset.id}`
@@ -346,6 +361,7 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
     Math.floor(parseFloat(localStorage.getItem(storageKey) ?? '0') || 0),
     MAX_RESUME_SECONDS
   )
+  const iframeRef   = useRef<HTMLIFrameElement>(null)
   const loadedAtRef = useRef(0)
   const activeSecRef = useRef(0)
   const lastTickRef = useRef(0)
@@ -357,14 +373,23 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
     activeSecRef.current = 0
     lastTickRef.current = Date.now()
     clearInterval(timerRef.current!)
+    // Wall-clock ticks advance at 1.2× speed so saved position stays accurate
     timerRef.current = setInterval(() => {
       const now = Date.now()
-      if (isPageActive()) activeSecRef.current += (now - lastTickRef.current) / 1000
+      if (isPageActive()) activeSecRef.current += ((now - lastTickRef.current) / 1000) * YT_SPEED
       lastTickRef.current = now
       const pos = Math.min(savedTime + activeSecRef.current, savedTime + MAX_RESUME_SECONDS)
       localStorage.setItem(storageKey, String(pos))
     }, 5000)
     trackEvent({ sessionId, assetId: asset.id, eventType: 'video_play' })
+
+    // Set playback rate via postMessage after a short delay for the player to initialise
+    setTimeout(() => {
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func: 'setPlaybackRate', args: [YT_SPEED] }),
+        'https://www.youtube.com'
+      )
+    }, 1500)
   }, [savedTime, storageKey, sessionId, asset.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -378,8 +403,11 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
   }, [storageKey, savedTime]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const src = videoId
-    ? `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1${savedTime > 5 ? `&start=${savedTime}` : ''}`
+    ? `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1${savedTime > 5 ? `&start=${savedTime}` : ''}`
     : null
+
+  const duration: number | null = asset.durationSeconds ?? null
+  const timeSaved = duration && duration > 0 ? formatTimeSaved(duration) : null
 
   if (!src) return <div className="absolute inset-0 bg-black" />
 
@@ -391,14 +419,28 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
         </div>
       )}
       <iframe
+        ref={iframeRef}
         src={src}
         className="flex-1 w-full border-0"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen
         onLoad={handleLoad}
       />
-      {onSummarize && (
-        <div className="shrink-0 bg-background border-t flex items-center justify-end px-3 sm:px-4 py-2">
+      <div className="shrink-0 bg-background border-t flex items-center justify-between gap-2 px-3 sm:px-4 py-2">
+        {/* Time-saved badge */}
+        {timeSaved ? (
+          <div className="flex items-center gap-1.5 bg-foreground text-background text-xs font-medium px-3 py-1.5 rounded-full select-none">
+            <span className="opacity-60 line-through">{timeSaved.original}</span>
+            <span>⚡</span>
+            <span>{timeSaved.fast}</span>
+            <span className="opacity-50 ml-0.5">at {YT_SPEED}×</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 bg-foreground/10 text-foreground text-xs px-2.5 py-1 rounded-full">
+            <span>⚡ {YT_SPEED}×</span>
+          </div>
+        )}
+        {onSummarize && (
           <button
             onClick={() => {
               clearInterval(timerRef.current!)
@@ -406,13 +448,13 @@ function YouTubeViewer({ url, asset, sessionId, onSummarize }: any) {
               trackEvent({ sessionId, assetId: asset.id, eventType: 'video_complete' })
               onSummarize()
             }}
-            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+            className="flex items-center justify-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
           >
             <Sparkles className="h-4 w-4" />
             Summarize
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
