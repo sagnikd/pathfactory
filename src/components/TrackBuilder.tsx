@@ -371,7 +371,7 @@ export function TrackBuilder({
               placeholder="e.g. Getting Started with Product X"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="text-base h-11"
+              className="h-8 text-sm"
             />
             <p className="text-xs text-muted-foreground">For your team only — shown in the dashboard, never to visitors.</p>
           </div>
@@ -382,7 +382,7 @@ export function TrackBuilder({
               placeholder={title || 'e.g. Getting Started with Product X'}
               value={externalTitle}
               onChange={(e) => setExternalTitle(e.target.value)}
-              className="text-base h-11"
+              className="h-8 text-sm"
             />
             <p className="text-xs text-muted-foreground">
               Shown to visitors — the live page, chat assistant, and search results. Leave blank to use the internal title. Changing this updates the track&apos;s URL; the old link keeps working.
