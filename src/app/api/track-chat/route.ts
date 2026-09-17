@@ -632,13 +632,19 @@ export async function POST(req: Request) {
     // question. No real user message exists for this turn — one is synthesized
     // server-side and never shown to the visitor or persisted as their own.
     const isKickoff = body.kickoff === true
+    const isAssetSwitch = body.assetSwitch === true
     const kickoffAssetTitle = typeof body.kickoffAssetTitle === 'string'
       ? body.kickoffAssetTitle.trim().slice(0, 200)
+      : ''
+    const switchedAssetTitle = typeof body.switchedAssetTitle === 'string'
+      ? body.switchedAssetTitle.trim().slice(0, 200)
       : ''
 
     const message = isKickoff
       ? `(System: the visitor has shown real engagement${kickoffAssetTitle ? ` while viewing "${kickoffAssetTitle}"` : ''}. Begin the conversation now, per your instructions for this moment — a contextual hook, not a generic greeting.)`
-      : typeof body.message === 'string' ? body.message.replace(/\s+/g, ' ').trim().slice(0, 1600) : ''
+      : isAssetSwitch
+        ? `(System: the visitor just switched to a different asset${switchedAssetTitle ? ` — "${switchedAssetTitle}"` : ''}. Acknowledge the new content in one sentence, then continue the qualification flow from where it left off. Do not restart or re-ask questions already answered.)`
+        : typeof body.message === 'string' ? body.message.replace(/\s+/g, ' ').trim().slice(0, 1600) : ''
 
     if (!message) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 })

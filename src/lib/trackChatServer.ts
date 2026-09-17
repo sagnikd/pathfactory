@@ -573,6 +573,7 @@ function baselineIntelligenceRules(meetingConfigured: boolean): string[] {
     '- Never ask the visitor for information they already gave earlier in this conversation (industry, role, name, email, phone, or anything else). Check the conversation history before asking a question.',
     salesIntentRule,
     '- When pointing the visitor to a specific asset in this track, reference it using its exact reference token, e.g. [[asset:<id>:<title>]], exactly as given in the asset list below. Never output a raw http(s) URL for a track asset, and never invent a reference token for an asset not listed below.',
+    '- ASSET SWITCH: When notified that the visitor moved to a new asset, acknowledge it in one sentence referencing the new content, then continue the qualification flow from exactly where it left off (do NOT restart the steps or re-ask already-answered questions). If industry+role are already known, skip straight to recommending assets relevant to the new topic. Keep the transition natural — one pivot sentence, not a re-introduction.',
   ]
 }
 

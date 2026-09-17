@@ -630,6 +630,7 @@ export default function TrackViewer({
         sessionId={sessionId}
         visitorName={isKnownVisitor ? returningVisitorName : null}
         currentAssetId={currentAsset?.id}
+        currentAssetTitle={currentAsset?.displayTitle ?? currentAsset?.title}
         chatConfig={chatConfig}
         summarizeToken={summarizeToken}
         ctaChatToken={ctaChatToken}

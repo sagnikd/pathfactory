@@ -9,6 +9,7 @@ import { trackEvent } from '@/lib/tracking'
 interface TrackChatWidgetProps {
   trackId: string
   currentAssetId?: string
+  currentAssetTitle?: string
   chatConfig: {
     enabled: boolean
     accentColor: string
@@ -147,6 +148,7 @@ function TypingIndicator({ accentColor }: { accentColor: string }) {
 export function TrackChatWidget({
   trackId,
   currentAssetId,
+  currentAssetTitle,
   chatConfig,
   sessionId,
   visitorName,
@@ -204,12 +206,14 @@ export function TrackChatWidget({
   // Reset conversation context when the visitor navigates to a different asset
   useEffect(() => {
     if (prevAssetIdRef.current === currentAssetId) return
+    const hadConversation = messages.some((m) => m !== greeting && m.role === 'assistant')
     prevAssetIdRef.current = currentAssetId
-    // Keep messages, askedQuestions, askedCount, showMeetingCta — visitor
-    // already answered qualification; wiping on asset nav re-triggers those
-    // questions on every content switch.
     setInputValue('')
     setIsLoading(false)
+    // If bot already engaged, re-trigger contextually on the new asset
+    if (hadConversation && currentAssetId) {
+      sendAssetSwitch()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAssetId])
 
@@ -345,6 +349,41 @@ export function TrackChatWidget({
             'I could not reach the assistant right now. Try one of the suggested questions or keep browsing the track.',
         },
       ])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Visitor switched to a different asset mid-conversation — re-engage with
+  // a contextual pivot without restarting the qualification flow.
+  async function sendAssetSwitch() {
+    if (isLoading) return
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/track-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trackId,
+          sessionId: sessionId ?? null,
+          currentAssetId: currentAssetId ?? null,
+          assetSwitch: true,
+          switchedAssetTitle: currentAssetTitle ?? '',
+          history: conversationHistory(messages),
+          askedQuestions,
+          visitorProfile: visitorProfile ?? null,
+        }),
+      })
+      const data = await response.json().catch(() => ({})) as ChatApiResponse
+      if (!response.ok) throw new Error(data.error ?? 'Chat request failed')
+      const answer = data.answer?.trim()
+      if (answer) setMessages((prev) => [...prev, { role: 'assistant', content: answer }])
+      setSuggestedQuestions(
+        (data.suggestedQuestions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 5)
+      )
+      if (data.showMeetingCta) setShowMeetingCta(true)
+    } catch {
+      // silent — asset switch re-engagement is best-effort
     } finally {
       setIsLoading(false)
     }
