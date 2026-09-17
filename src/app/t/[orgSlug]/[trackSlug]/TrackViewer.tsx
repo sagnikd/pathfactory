@@ -319,10 +319,17 @@ export default function TrackViewer({
     (currentAsset?.type === 'article' && /\.pdf(\?|$)/i.test(currentAsset?.sourceUrl || ''))
   const downloadHref = currentAsset?.fileUrl || (isPdfRouted ? currentAsset?.sourceUrl : null) || null
 
+  const emailKnown = isKnownVisitor || !!(submittedFields?.email)
+
   const handleCtaClick = () => {
     if (!brandCta) return
     if (sessionId && currentAsset) {
       trackEvent({ sessionId, assetId: currentAsset.id, eventType: 'cta_click' })
+    }
+    // Gate not yet cleared → always open gate form first to capture contact info
+    if (gateConfig?.enabled && !gateCleared) {
+      setGateForceToken(t => t + 1)
+      return
     }
     if (brandCta.action === 'chat') handleCtaChat()
     else if (brandCta.action === 'gate') setGateForceToken(t => t + 1)
@@ -435,7 +442,7 @@ export default function TrackViewer({
                   >
                     <Mail className="w-4 h-4" />
                   </a>
-                  {downloadHref && (
+                  {downloadHref && emailKnown && (
                     <a
                       href={downloadHref}
                       download
