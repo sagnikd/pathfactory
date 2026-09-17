@@ -245,7 +245,35 @@ function extractOptionsFromQuestion(answer: string): string[] {
   if (rawParts.some((p) => p.split(/\s+/).length > 3)) return []
   if (rawParts.some((p) => /'|^(what|who|when|where|why|how|is|are|do|does|did|your|you)\b/i.test(p))) return []
 
-  return rawParts.slice(0, 5)
+  return rawParts.slice(0, 6)
+}
+
+// Returns null when `raw` is not a usable {answer, suggestedQuestions} object,
+// so callers can try the next candidate rather than committing to a bad parse.
+function tryParsePayloadJson(raw: string): { answer: string; rawSuggested: string[] } | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!isRecord(parsed)) return null
+
+  // Collapse spaces/tabs only — keep newlines so bullet-point formatting survives.
+  const answer = typeof parsed.answer === 'string'
+    ? parsed.answer.replace(/[ \t]+/g, ' ').trim().slice(0, 1400)
+    : ''
+  if (!answer) return null
+
+  const rawSuggested = Array.isArray(parsed.suggestedQuestions)
+    ? (parsed.suggestedQuestions as unknown[])
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => s.replace(/\s+/g, ' ').trim().slice(0, 120))
+        .filter(Boolean)
+        .slice(0, 6)
+    : []
+
+  return { answer, rawSuggested }
 }
 
 function parseAssistantPayload(
@@ -255,62 +283,34 @@ function parseAssistantPayload(
   askedQuestions: string[]
 ): AssistantPayload {
   const fallbackQuestions = getRecommendedQuestions(context, currentAssetId, askedQuestions)
-  try {
-    const parsed = JSON.parse(rawText) as unknown
-    if (!isRecord(parsed)) throw new Error('not an object')
 
-    // Collapse spaces/tabs only — keep newlines so bullet-point formatting survives.
-    const answer = typeof parsed.answer === 'string'
-      ? parsed.answer.replace(/[ \t]+/g, ' ').trim().slice(0, 1400)
-      : ''
-    if (!answer) throw new Error('missing answer')
+  // Try the raw output as JSON, then unwrapped from a markdown code fence, then
+  // as a trailing {...} block after prose — the model drifts between all three.
+  const fenced = rawText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  const embedded = rawText.match(/(\{[\s\S]*\})\s*$/)
+  const parsed =
+    tryParsePayloadJson(rawText) ??
+    (fenced ? tryParsePayloadJson(fenced[1]) : null) ??
+    (embedded ? tryParsePayloadJson(embedded[1]) : null)
 
-    const rawSuggested = Array.isArray(parsed.suggestedQuestions)
-      ? (parsed.suggestedQuestions as unknown[])
-          .filter((s): s is string => typeof s === 'string')
-          .map((s) => s.replace(/\s+/g, ' ').trim().slice(0, 120))
-          .filter(Boolean)
-          .slice(0, 4)
-      : []
+  // Model sometimes ignores the JSON contract entirely and answers in prose.
+  const answer = parsed
+    ? parsed.answer
+    : rawText.replace(/[ \t]+/g, ' ').trim().slice(0, 1400) ||
+      'I can help with this track — please ask a more specific question.'
+  const rawSuggested = parsed?.rawSuggested ?? []
 
-    // If the model left suggestedQuestions empty but its own answer poses a
-    // specific question, generic "tell me more about this asset" chips are
-    // actively wrong here — try to recover the real options from the answer
-    // text; otherwise show no chips at all rather than a mismatched fallback.
-    const suggestedQuestions = rawSuggested.length > 0
-      ? rawSuggested
-      : answer.trim().endsWith('?')
-        ? extractOptionsFromQuestion(answer)
-        : fallbackQuestions
+  // When the assistant's own message ends in a question, generic "tell me more
+  // about this asset" chips contradict what it just asked — recover the real
+  // options from the question text, else show no chips at all. This must hold
+  // on the prose path too, which is where the model most often drops options.
+  const suggestedQuestions = rawSuggested.length > 0
+    ? rawSuggested
+    : answer.trim().endsWith('?')
+      ? extractOptionsFromQuestion(answer)
+      : fallbackQuestions
 
-    return { answer, suggestedQuestions }
-  } catch {
-    // Model sometimes wraps JSON in a markdown code fence despite instructions —
-    // strip the fence and retry once.
-    const fenced = rawText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
-    if (fenced) {
-      try {
-        return parseAssistantPayload(fenced[1], context, currentAssetId, askedQuestions)
-      } catch {
-        // fall through
-      }
-    }
-    // Model sometimes prepends plain-text prose then appends the JSON object —
-    // extract the last {...} block in the output and retry with just that.
-    const embeddedJson = rawText.match(/(\{[\s\S]*\})\s*$/)
-    if (embeddedJson) {
-      try {
-        return parseAssistantPayload(embeddedJson[1], context, currentAssetId, askedQuestions)
-      } catch {
-        // fall through to plain-text handling below
-      }
-    }
-    const plain = rawText.replace(/[ \t]+/g, ' ').trim().slice(0, 1400)
-    return {
-      answer: plain || 'I can help with this track — please ask a more specific question.',
-      suggestedQuestions: fallbackQuestions,
-    }
-  }
+  return { answer, suggestedQuestions }
 }
 
 async function callDeepseek(

@@ -326,7 +326,7 @@ export function TrackChatWidget({
         (data.suggestedQuestions ?? [])
           .map((q) => q.trim())
           .filter(Boolean)
-          .slice(0, 5)
+          .slice(0, 6)
       )
 
       setAskedCount((n) => n + 1)
@@ -379,7 +379,7 @@ export function TrackChatWidget({
       const answer = data.answer?.trim()
       if (answer) setMessages((prev) => [...prev, { role: 'assistant', content: answer }])
       setSuggestedQuestions(
-        (data.suggestedQuestions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 5)
+        (data.suggestedQuestions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 6)
       )
       if (data.showMeetingCta) setShowMeetingCta(true)
     } catch {
@@ -416,7 +416,7 @@ export function TrackChatWidget({
       const answer = data.answer?.trim()
       if (answer) setMessages((prev) => [...prev, { role: 'assistant', content: answer }])
       setSuggestedQuestions(
-        (data.suggestedQuestions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 5)
+        (data.suggestedQuestions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 6)
       )
       if (data.showMeetingCta) setShowMeetingCta(true)
     } catch {
@@ -444,7 +444,7 @@ export function TrackChatWidget({
     })
   }
 
-  const visibleSuggestions = suggestedQuestions.filter(Boolean).slice(0, 5)
+  const visibleSuggestions = suggestedQuestions.filter(Boolean).slice(0, 6)
 
   return (
     <>
