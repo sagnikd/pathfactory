@@ -44,6 +44,28 @@ type ChatApiResponse = {
   error?: string
 }
 
+// When the visitor rejects cookies there's no visitorId cookie, so the server
+// renders the page with sessionId: null and every chat turn would otherwise
+// open its own orphan conversation. This id lives in sessionStorage only — not
+// a cookie, never written to disk, discarded when the tab closes — purely so
+// one visitor's turns stay in one conversation. It does not re-enable event
+// tracking, which stays gated on the consent cookie.
+const ANON_CHAT_ID_KEY = 'trackChatAnonId'
+
+function getAnonChatId(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const existing = sessionStorage.getItem(ANON_CHAT_ID_KEY)
+    if (existing) return existing
+    const generated = crypto.randomUUID()
+    sessionStorage.setItem(ANON_CHAT_ID_KEY, generated)
+    return generated
+  } catch {
+    // Private mode / storage blocked — conversation just won't group.
+    return null
+  }
+}
+
 function isValidHttpsUrl(value: string | undefined): value is string {
   if (!value) return false
   try {
@@ -309,6 +331,7 @@ export function TrackChatWidget({
         body: JSON.stringify({
           trackId,
           sessionId: sessionId ?? null,
+          anonChatId: sessionId ? null : getAnonChatId(),
           currentAssetId: currentAssetId ?? null,
           message: text,
           history: priorHistory,
@@ -366,6 +389,7 @@ export function TrackChatWidget({
         body: JSON.stringify({
           trackId,
           sessionId: sessionId ?? null,
+          anonChatId: sessionId ? null : getAnonChatId(),
           currentAssetId: currentAssetId ?? null,
           assetSwitch: true,
           switchedAssetTitle: currentAssetTitle ?? '',
@@ -402,6 +426,7 @@ export function TrackChatWidget({
         body: JSON.stringify({
           trackId,
           sessionId: sessionId ?? null,
+          anonChatId: sessionId ? null : getAnonChatId(),
           currentAssetId: currentAssetId ?? null,
           kickoff: true,
           kickoffAssetTitle: proactiveAssetTitle ?? '',

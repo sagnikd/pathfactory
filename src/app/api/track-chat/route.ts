@@ -394,6 +394,67 @@ async function callDeepseek(
 // Chat inbox persistence
 // ---------------------------------------------------------------------------
 
+// A visitor who rejected cookies gets no visitorId cookie, so page.tsx creates
+// neither a visitors nor a sessions row and passes sessionId: null. Without a
+// session every chat turn used to open its own orphan conversation, and the
+// soft lead capture below never ran at all.
+//
+// The chat widget therefore sends a tab-scoped id it keeps in sessionStorage —
+// not a cookie, nothing persisted to the device, gone when the tab closes. It
+// exists only to hold one visitor's conversation together and to satisfy the
+// NOT NULL leads.visitor_id when they volunteer contact details. Behavioral
+// event tracking stays off independently: trackEvent() drops everything while
+// the rejection cookie is set, so this session accrues no engagements and the
+// row carries no IP or geo.
+const ANON_CHAT_FINGERPRINT_PREFIX = 'anon-chat:'
+
+async function resolveAnonChatSession(
+  trackId: string,
+  anonChatId: string
+): Promise<string | null> {
+  const fingerprintId = `${ANON_CHAT_FINGERPRINT_PREFIX}${anonChatId}`
+
+  const [existingVisitor] = await db
+    .select({ id: visitors.id })
+    .from(visitors)
+    .where(eq(visitors.fingerprintId, fingerprintId))
+    .limit(1)
+
+  let visitorId = existingVisitor?.id ?? null
+  if (!visitorId) {
+    // onConflictDoNothing + re-select: two turns can race on the first message.
+    const [created] = await db
+      .insert(visitors)
+      .values({ fingerprintId })
+      .onConflictDoNothing({ target: visitors.fingerprintId })
+      .returning({ id: visitors.id })
+    visitorId = created?.id ?? null
+    if (!visitorId) {
+      const [raced] = await db
+        .select({ id: visitors.id })
+        .from(visitors)
+        .where(eq(visitors.fingerprintId, fingerprintId))
+        .limit(1)
+      visitorId = raced?.id ?? null
+    }
+  }
+  if (!visitorId) return null
+
+  const [existingSession] = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.visitorId, visitorId), eq(sessions.trackId, trackId)))
+    .orderBy(desc(sessions.startedAt))
+    .limit(1)
+  if (existingSession) return existingSession.id
+
+  const [createdSession] = await db
+    .insert(sessions)
+    .values({ visitorId, trackId })
+    .returning({ id: sessions.id })
+  return createdSession?.id ?? null
+}
+
 async function persistChatTurn(
   trackId: string,
   sessionId: string | null,
@@ -664,6 +725,11 @@ export async function POST(req: Request) {
       ? body.sessionId.trim().slice(0, 80) || null
       : null
 
+    // Only consulted when there's no real session (cookies rejected).
+    const anonChatId = typeof body.anonChatId === 'string'
+      ? body.anonChatId.trim().slice(0, 80) || null
+      : null
+
     const askedQuestions: string[] = Array.isArray(body.askedQuestions)
       ? (body.askedQuestions as unknown[])
           .filter((q): q is string => typeof q === 'string')
@@ -706,9 +772,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Chat is disabled for this track' }, { status: 403 })
     }
 
+    // Falls back to a tab-scoped session so a cookie-rejecting visitor's turns
+    // land in one conversation and can still produce a lead on disclosure.
+    const effectiveSessionId = sessionId
+      ?? (anonChatId ? await resolveAnonChatSession(trackId, anonChatId).catch(() => null) : null)
+
     if (isTrackGated(context.track.gateConfigJson)) {
-      const cleared = sessionId
-        ? await hasSessionClearedGate(sessionId, trackId)
+      const cleared = effectiveSessionId
+        ? await hasSessionClearedGate(effectiveSessionId, trackId)
         : false
       if (!cleared) {
         return NextResponse.json(
@@ -729,24 +800,28 @@ export async function POST(req: Request) {
     // trigger text, so the transcript reads sensibly rather than starting
     // mid-conversation with no context for how the assistant opened.
     const persistedMessage = isKickoff ? '(Assistant proactively started this conversation)' : message
-    void persistChatTurn(trackId, sessionId, persistedMessage, assistant.answer).catch((err) =>
-      console.error('[track-chat] persist failed:', err)
-    )
+    // Soft lead capture — visitor volunteered an email, phone, or name
+    // conversationally. These must settle before the turn is persisted:
+    // persistChatTurn stamps the conversation's contactEmail/contactName from
+    // the visitor's lead, so running them in parallel let the persist for the
+    // disclosing turn read a lead that did not exist yet. On a final "thanks,
+    // you're all set" turn there is no later turn to correct it, and the
+    // conversation stays labelled "Anonymous visitor" despite having the email.
+    const captures = !isKickoff && effectiveSessionId
+      ? Promise.allSettled([
+          captureEmailFromMessage(trackId, effectiveSessionId, message, history),
+          capturePhoneFromMessage(effectiveSessionId, message),
+          captureNameFromMessage(effectiveSessionId, message, history),
+        ]).then((results) => {
+          for (const r of results) {
+            if (r.status === 'rejected') console.error('[track-chat] capture failed:', r.reason)
+          }
+        })
+      : Promise.resolve()
 
-    if (!isKickoff) {
-      // Soft lead capture — visitor volunteered an email, phone, or name conversationally
-      if (sessionId) {
-        void captureEmailFromMessage(trackId, sessionId, message, history).catch((err) =>
-          console.error('[track-chat] email capture failed:', err)
-        )
-        void capturePhoneFromMessage(sessionId, message).catch((err) =>
-          console.error('[track-chat] phone capture failed:', err)
-        )
-        void captureNameFromMessage(sessionId, message, history).catch((err) =>
-          console.error('[track-chat] name capture failed:', err)
-        )
-      }
-    }
+    void captures
+      .then(() => persistChatTurn(trackId, effectiveSessionId, persistedMessage, assistant.answer))
+      .catch((err) => console.error('[track-chat] persist failed:', err))
 
     // Explicit sales intent should surface the meeting card immediately,
     // regardless of how many questions have been asked so far — a visitor
