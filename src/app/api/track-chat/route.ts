@@ -245,7 +245,7 @@ function extractOptionsFromQuestion(answer: string): string[] {
   if (rawParts.some((p) => p.split(/\s+/).length > 3)) return []
   if (rawParts.some((p) => /'|^(what|who|when|where|why|how|is|are|do|does|did|your|you)\b/i.test(p))) return []
 
-  return rawParts.slice(0, 6)
+  return rawParts.slice(0, 4)
 }
 
 // Returns null when `raw` is not a usable {answer, suggestedQuestions} object,
@@ -270,7 +270,7 @@ function tryParsePayloadJson(raw: string): { answer: string; rawSuggested: strin
         .filter((s): s is string => typeof s === 'string')
         .map((s) => s.replace(/\s+/g, ' ').trim().slice(0, 120))
         .filter(Boolean)
-        .slice(0, 6)
+        .slice(0, 4)
     : []
 
   return { answer, rawSuggested }
