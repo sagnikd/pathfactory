@@ -286,11 +286,21 @@ function parseAssistantPayload(
     return { answer, suggestedQuestions }
   } catch {
     // Model sometimes wraps JSON in a markdown code fence despite instructions —
-    // strip the fence and retry once before falling back to plain text.
+    // strip the fence and retry once.
     const fenced = rawText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
     if (fenced) {
       try {
         return parseAssistantPayload(fenced[1], context, currentAssetId, askedQuestions)
+      } catch {
+        // fall through
+      }
+    }
+    // Model sometimes prepends plain-text prose then appends the JSON object —
+    // extract the last {...} block in the output and retry with just that.
+    const embeddedJson = rawText.match(/(\{[\s\S]*\})\s*$/)
+    if (embeddedJson) {
+      try {
+        return parseAssistantPayload(embeddedJson[1], context, currentAssetId, askedQuestions)
       } catch {
         // fall through to plain-text handling below
       }
