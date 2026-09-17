@@ -318,14 +318,12 @@ export function TrackChatWidget({
       const answer = data.answer?.trim() || 'I can help, but I need a more specific question.'
       setMessages((prev) => [...prev, { role: 'assistant', content: answer }])
 
-      if (data.suggestedQuestions?.length) {
-        setSuggestedQuestions(
-          data.suggestedQuestions
-            .map((q) => q.trim())
-            .filter(Boolean)
-            .slice(0, 5)
-        )
-      }
+      setSuggestedQuestions(
+        (data.suggestedQuestions ?? [])
+          .map((q) => q.trim())
+          .filter(Boolean)
+          .slice(0, 5)
+      )
 
       setAskedCount((n) => n + 1)
       if (data.showMeetingCta) setShowMeetingCta(true)
@@ -378,9 +376,9 @@ export function TrackChatWidget({
 
       const answer = data.answer?.trim()
       if (answer) setMessages((prev) => [...prev, { role: 'assistant', content: answer }])
-      if (data.suggestedQuestions?.length) {
-        setSuggestedQuestions(data.suggestedQuestions.map((q) => q.trim()).filter(Boolean).slice(0, 5))
-      }
+      setSuggestedQuestions(
+        (data.suggestedQuestions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 5)
+      )
       if (data.showMeetingCta) setShowMeetingCta(true)
     } catch {
       // Best-effort — if the proactive hook fails, just stay silent rather than

@@ -555,6 +555,7 @@ const JSON_OUTPUT_INSTRUCTIONS = [
   '- "suggestedQuestions" is optional. Use it ONLY for a closed set of valid, clickable ANSWERS to a multiple-choice question you just asked (e.g. "Insurance", "Financial Services", "Healthcare" after asking their industry) — each entry must be a short answer the visitor could click as-is.',
   '- EVERY entry in "suggestedQuestions" must be an ANSWER (visitor\'s words), never a question. If an entry ends with "?" it is wrong — remove it. "Which industry are you in?" is wrong; "Insurance" is right.',
   '- Never use "suggestedQuestions" for open-ended questions expecting free text (name, email, company) — leave it as an empty array and let them type their answer.',
+  '- For questions about industry, vertical, role, use case, or focus area: always infer the relevant options from the track content and asset titles (e.g. if track covers Telecom, BFSI, and Healthcare, use those as options). Never ask a vague open-ended "what\'s your focus area?" without providing the clickable options drawn from the track.',
   '- Do NOT put follow-up questions or conversation starters in "suggestedQuestions". If you have not just asked a closed multiple-choice question, set "suggestedQuestions" to [].',
   '- Never wrap the JSON in code fences. Output ONLY the JSON object.',
 ]
