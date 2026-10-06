@@ -4,33 +4,9 @@
  * never pollute company fields with "Airtel" or "AWS".
  */
 
-const TELECOM_PATTERNS: RegExp[] = [
-  /\btelecom(munication)?s?\b/i,
-  /\b(mobile|wireless|cellular)\b/i,
-  /\bbroadband\b/i,
-  /\b(internet\s+service|isp)\b/i,
-  /\bcable\b/i,
-  /\bfi(b|r)re?\b/i,
-  /\b(network|networking)\b/i,
-  /\bcommunications?\b/i,
-  /\b(lte|dsl|fios|xfinity)\b/i,
-  /\b(carrier|telco)\b/i,
-  /\b(comcast|verizon|at&t|t-?mobile|sprint|spectrum|charter)\b/i,
-  /\b(airtel|jio|vodafone|bsnl|reliance)\b/i,
-  /\b(bt\s+(group|plc)?|sky\s+broadband|virgin\s+media|talktalk)\b/i,
-  /\b(deutsche\s+telekom|telef[oó]nica|orange|sfr|bouygues)\b/i,
-  /\b(singtel|telstra|optus|ntt|softbank|kddi)\b/i,
-  /\bchina\s+(telecom|mobile|unicom)\b/i,
-  /\b(zayo|level\s+3|cogent|hurricane\s+electric|centurylink|lumen)\b/i,
-  /\b(amazon|google\s+cloud|microsoft\s+azure|digitalocean|cloudflare)\b/i,
-  /\b(hetzner|ovh|linode|vultr)\b/i,
-  /\b(hosting|datacenter|data\s+center|colocation)\b/i,
-  /\bcato\s+networks?\b/i,
-]
+import { normalizeCompany } from './companyFilter'
 
-export function isTelecomOrISP(org: string): boolean {
-  return TELECOM_PATTERNS.some(p => p.test(org))
-}
+export { isTelecomOrISP } from './companyFilter'
 
 export type IpInfo = {
   company: string | null
@@ -59,8 +35,7 @@ export async function lookupIp(ip: string | null): Promise<IpInfo> {
     const d = await res.json()
     if (d.error) return empty
 
-    const rawOrg  = d.org  ? String(d.org).replace(/^AS\d+\s+/i, '').trim() : ''
-    const company = rawOrg && !isTelecomOrISP(rawOrg) ? rawOrg : null
+    const company = normalizeCompany(d.org)
 
     return {
       ip,

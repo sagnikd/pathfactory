@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Sparkles } from 'lucide-react'
 import { clientGeoLookup } from '@/lib/geoLookup'
 import { getCurrentVisitorId } from '@/lib/tracking'
+import { isTelecomOrISP } from '@/lib/companyFilter'
 
 export type LeadField = {
   name: string
@@ -36,80 +37,6 @@ const IP_FIELD_MAP: Record<string, keyof IpData> = {
 
 type IpData = { company: string; country: string; city: string }
 
-/**
- * Patterns that indicate a telecom operator, ISP, mobile carrier, or cloud/hosting
- * provider — i.e. the detected "org" is the network the visitor is on, NOT their
- * employer.  In these cases we leave the Company field blank rather than polluting
- * it with "Airtel" or "Comcast".
- */
-const TELECOM_PATTERNS: RegExp[] = [
-  // Generic service-type words
-  /\btelecom(munication)?s?\b/i,
-  /\b(mobile|wireless|cellular)\b/i,
-  /\bbroadband\b/i,
-  /\b(internet\s+service|isp)\b/i,
-  /\bcable\b/i,
-  /\bfi(re|b)r(e|e)\b/i,            // fibre / fiber
-  /\b(network|networking)\b/i,
-  /\bcommunications?\b/i,
-  /\b(lte|dsl|fios|xfinity)\b/i,
-  /\bcarrier\b/i,
-  /\btelco\b/i,
-  // Major global carriers / ISPs (partial match is intentional)
-  /\b(comcast|xfinity)\b/i,
-  /\bverizon\b/i,
-  /\bat&t\b/i,
-  /\bt-?mobile\b/i,
-  /\bsprint\b/i,
-  /\b(spectrum|charter)\b/i,
-  /\bcox\s+(communications|cable)?\b/i,
-  /\bairtel\b/i,
-  /\bjio\b/i,
-  /\bvodafone\b/i,
-  /\bbsnl\b/i,
-  /\breliance\s+(jio|communications)\b/i,
-  /\bbt\s+(group|plc)?\b/i,
-  /\bsky\s+broadband\b/i,
-  /\bvirgin\s+media\b/i,
-  /\btalktalk\b/i,
-  /\bdeutsche\s+telekom\b/i,
-  /\btelef[oó]nica\b/i,
-  /\borange\b/i,
-  /\bsfr\b/i,
-  /\bbouygues\s+telecom\b/i,
-  /\bsingtel\b/i,
-  /\btelstra\b/i,
-  /\boptus\b/i,
-  /\bntt\b/i,
-  /\bsoftbank\b/i,
-  /\bkddi\b/i,
-  /\bchina\s+(telecom|mobile|unicom)\b/i,
-  /\bzayo\b/i,
-  /\blevel\s+3\b/i,
-  /\bcogent\b/i,
-  /\bhurricane\s+electric\b/i,
-  /\bcenturylink\b/i,
-  /\blumen\b/i,
-  /\bfrontier\s+communications\b/i,
-  // Cloud / hosting providers (also not the visitor's employer)
-  /\bamazon(\s+(web\s+services|aws))?\b/i,
-  /\bgoogle(\s+(cloud|fiber))?\b/i,
-  /\bmicrosoft(\s+azure)?\b/i,
-  /\bdigital\s*ocean\b/i,
-  /\bcloudflare\b/i,
-  /\bhetzner\b/i,
-  /\bovh\b/i,
-  /\blinode\b/i,
-  /\bvultr\b/i,
-  /\bhosting\b/i,
-  /\bdatacenter\b/i,
-  /\bdata\s+center\b/i,
-  /\bcolocation\b/i,
-]
-
-function isTelecomOrISP(org: string): boolean {
-  return TELECOM_PATTERNS.some(p => p.test(org))
-}
 
 /** Field pairs that should share a row when both are present and enabled */
 const FIELD_PAIRS: [string, string][] = [

@@ -4,6 +4,7 @@ import { db } from '@/db'
 import { sessions, tracks } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { lookupIp } from '@/lib/ipLookup'
+import { normalizeCompany } from '@/lib/companyFilter'
 import { processAbmSessionMatch } from '@/lib/abm'
 
 /**
@@ -45,7 +46,11 @@ export async function POST(req: Request) {
     if (bodyCountry || bodyCity) {
       country = bodyCountry ?? null
       city    = bodyCity    ?? null
-      company = bodyCompany ?? null
+      // Re-filter rather than trusting the body: this is the path that actually
+      // resolves a company (the server fallback below sees Netlify's infra IP),
+      // so an unfiltered value here is what reaches analytics and ABM matching.
+      // Also guards against a stale client bundle with an older pattern list.
+      company = normalizeCompany(bodyCompany)
       source  = 'client'
     } else {
       // Server-side fallback: only run if we have nothing stored yet.
